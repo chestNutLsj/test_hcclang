@@ -1,0 +1,100 @@
+/*
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+#include "{{ executor_header_file }}"
+
+namespace hccl {
+{{ class_name }}::{{ class_name }}(const HcclDispatcher dispatcher, std::unique_ptr<TopoMatcher> &topoMatcher)
+    : Coll{{ collective_name_camel_case }}Executor(dispatcher, topoMatcher)
+{
+{{ executor_constructor_code }}
+}
+
+HcclResult {{ class_name }}::CalcStreamNum(u32& streamNum)
+{
+{{ executor_calc_stream_num_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::CalcCommInfo(std::vector<LevelNSubCommTransport>& opTransport)
+{
+{{ executor_calc_comm_info_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::CalcLevel0CommInfo(TransportMemType inputType, TransportMemType outputType,
+    std::vector<LevelNSubCommTransport>& opTransport)
+{
+{{ executor_calc_level0_comm_info_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::CalcLevel1CommInfo(TransportMemType inputType, TransportMemType outputType,
+    std::vector<LevelNSubCommTransport>& opTransport)
+{
+{{ executor_calc_level1_comm_info_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::CalcLevel2CommInfo(TransportMemType inputType, TransportMemType outputType,
+    std::vector<LevelNSubCommTransport>& opTransport)
+{
+{{ executor_calc_level2_comm_info_code }}
+    return HCCL_SUCCESS;
+}
+
+void {{ class_name }}::ParseParam(const OpParam& param)
+{
+{{ executor_parse_param_code }}
+}
+
+HcclResult {{ class_name }}::CalcTransportMemType(TransportMemType &inputType, TransportMemType &outputType)
+{
+{{ executor_calc_transport_mem_type_code }}
+    return HCCL_SUCCESS;
+}
+
+u64 {{ class_name }}::CalcLoopMaxCount(const u64 cclBuffSize, const u32 unitSize)
+{
+{{ executor_calc_loop_max_count_code }}
+}
+
+bool {{ class_name }}::IsDataSplitForRdmaSdmaConcurrent(const u64 curSize)
+{
+{{ executor_is_data_split_code }}
+}
+
+HcclResult {{ class_name }}::KernelRun(const OpParam &param, ExecMem &execMem)
+{
+{{ executor_kernel_run_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::KernelRunInterServer(const OpParam &param, ExecMem &execMem)
+{
+{{ executor_kernel_run_inter_server_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::KernelRunIntraServer(const OpParam &param, ExecMem &execMem)
+{
+{{ executor_kernel_run_intra_server_code }}
+    return HCCL_SUCCESS;
+}
+
+HcclResult {{ class_name }}::Orchestrate(const OpParam& param, AlgResourceResponse& algRes)
+{
+{{ executor_orchestrate_code }}
+    return HCCL_SUCCESS;
+}
+
+REGISTER_EXEC("{{ executor_register_name }}", {{ executor_register_type }}, {{ class_name }});
+
+} // namespace hccl
