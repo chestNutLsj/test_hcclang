@@ -237,7 +237,7 @@ class DSLToHcclTranspiler:
                             if src_rank is not None and src_rank != gpu.rank:
                                 analysis['communication_pairs'].add((src_rank, gpu.rank))
                     
-                    # Handle recv_copy_send compound opferations - these are ring-specific
+                    # Handle recv_copy_send compound operations - these are ring-specific
                     if 'recv_copy_send' in inst_str:
                         # This suggests a ring pattern where each rank receives, copies, and forwards
                         # For 8-rank ring: rank i receives from (i-1)%8 and sends to (i+1)%8
