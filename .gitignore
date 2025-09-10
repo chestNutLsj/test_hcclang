@@ -131,3 +131,13 @@ dmypy.json
 CLAUDE.md
 GEMINI.md
 .specstory/*
+
+# 所有backup字段的文件/目录都不上传
+*backup*
+
+# 不重要的文档不上传
+HCCL_API_REFERENCE.md
+HCCL_SYNC_MECHANISMS.md
+DevLogs.md
+scripts/*
+cann-hccl/*
