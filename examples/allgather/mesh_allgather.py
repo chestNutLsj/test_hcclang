@@ -236,16 +236,6 @@ def main():
         import traceback
         traceback.print_exc()
         return
-    
-    print(f"\n=== Summary ===")
-    print("Mesh AllGather implementation and testing complete.")
-    print("Generated files demonstrate:")
-    print("- Mesh algorithm semantics in DSL")
-    print("- Parallel all-to-all data exchange pattern")
-    print("- Fully connected topology communication pattern")
-    print("- Optimal parallel communication for small clusters")
-    print("- Direct transpilation to HCCL mesh code")
-    print("- Complete DSL-to-HCCL operation mapping validation")
 
 if __name__ == "__main__":
     main()

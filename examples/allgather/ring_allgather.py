@@ -287,16 +287,6 @@ def main():
                             print(f"   File {filename}: {', '.join(status_parts)}")
                     except Exception as e:
                         print(f"   File {filename}: error reading - {e}")
-    
-    print(f"\n=== Summary ===")
-    print("Ring AllGather implementation and testing complete.")
-    print("Generated files demonstrate:")
-    print("- Ring algorithm semantics in DSL")
-    print("- Sequential step-by-step data forwarding")
-    print("- Ring topology communication pattern")
-    print("- Linear time complexity O(n-1) steps")
-    print("- Direct transpilation to HCCL ring code") 
-    print("- Complete DSL-to-HCCL operation mapping validation")
 
 if __name__ == "__main__":
     main()

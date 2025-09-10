@@ -4,19 +4,9 @@ HCCLang是一个专为华为集合通信库(HCCL)设计的领域特定语言(DSL
 
 ## 项目概述
 
-HCCLang提供了一套完整的工具链，让开发者能够以高级、直观的方式描述集合通信算法，并自动生成针对HCCL运行时优化的实现代码。该项目的核心价值在于弥合算法设计与硬件实现之间的鸿沟，使研究人员和工程师能够专注于算法逻辑本身，而无需深入底层实现细节。
-
-### 核心特性
-
-HCCLang系统具备以下关键特性：**表达能力强大的DSL语法**，支持基于数据块(chunk)的直观算法描述；**HCCL原生支持**，生成与HCCL运行时完全兼容的JSON中间表示；**算法验证机制**，内置正确性检查和性能分析工具；**可视化支持**，能够生成通信模式的图形化表示；**模块化架构**，支持算法组合和分层优化策略。
-
-### 设计理念
+HCCLang提供了一套完整的工具链，让开发者能够以高级、直观的方式描述集合通信算法，并自动生成针对HCCL可编译代码。该项目的核心价值在于弥合算法设计与硬件实现之间的鸿沟，使研究人员和工程师能够专注于算法逻辑本身，而无需深入底层实现细节。
 
 HCCLang的设计遵循分离关注点的原则，将算法描述、优化策略和代码生成解耦。算法设计者可以使用高级抽象描述通信模式，优化专家可以应用各种变换和组合策略，而系统工程师则可以专注于运行时集成和性能调优。这种分层设计不仅提高了开发效率，也增强了系统的可维护性和扩展性。
-
-## 系统架构
-
-HCCLang采用了双层次的编译流水线架构。该架构的核心优势在于其**渐进式抽象**特性。开发者从高级DSL开始，逐步向下细化到具体的硬件实现。每一层都保持了足够的抽象性，使得算法设计可以独立于特定硬件平台进行，同时又提供了足够的控制粒度以实现最优性能。
 
 ## 模块结构详解
 
@@ -75,21 +65,6 @@ HCCLang的依赖包经过精心选择，确保了系统的稳定性和性能：
 ```bash
 # 安装Python依赖
 pip install -r requirements.txt
-
-# 开发模式安装HCCLang
-pip install -e .
-```
-
-### 验证安装
-
-安装完成后，可以通过以下方式验证系统的正常工作：
-
-```bash
-# 检查HCCLang模块导入
-python -c "import hcclang; print('HCCLang安装成功')"
-
-# 运行基础测试
-python -m hcclang --help
 ```
 
 ## 快速入门指南
@@ -98,129 +73,230 @@ HCCLang的学习曲线被设计得相对平缓，开发者可以从简单的示�
 
 ### 基础算法示例
 
-以下是一个完整的Ring AllReduce算法实现示例，展示了HCCLang的基本使用模式：
+以下是一个完整的Mesh AllGather算法实现示例，展示了HCCLang的基本使用模式：
 
 ```python
-import hcclang
-from hcclang.language import *
-from hcclang.topologies import ring
-from hcclang.core import allreduce
-from hcclang.runtime.hcclize import save_hccl_algorithm
+import os
+import sys
 
-# 定义4节点环形拓扑
-topology = ring(4)
+# Add hcclang to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-# 创建AllReduce集合通信操作
-collective = allreduce(4)
+from hcclang.language import HCCLProgram, chunk, Check, Buffer
+from hcclang.language.collectives import AllGather
+from hcclang.topologies.generic import fully_connected
+from hcclang.runtime.hcclize import DSLToHcclTranspiler, HcclCodeGenConfig, CollectiveType, TopologyType
 
-# 定义算法步骤
-def create_ring_allreduce_steps():
-    steps = []
+def mesh_allgather_algorithm(num_ranks=4):
+    """
+    Implement mesh allgather algorithm using HCCLang DSL.
   
-    # 第一阶段：Reduce-Scatter
-    for step in range(3):
-        for rank in range(4):
-            src_rank = rank
-            dst_rank = (rank + 1) % 4
-            chunk_id = (rank - step - 1) % 4
-      
-            steps.append({
-                'rank': src_rank,
-                'sends': [{'dst_rank': dst_rank, 'chunk_id': chunk_id}],
-                'receives': [{'src_rank': (rank - 1) % 4, 'chunk_id': chunk_id}],
-                'reduces': [{'chunk_id': chunk_id}] if step > 0 else []
-            })
+    Args:
+        num_ranks: Number of ranks in the mesh topology
   
-    # 第二阶段：All-Gather
-    for step in range(3):
-        for rank in range(4):
-            src_rank = rank
-            dst_rank = (rank + 1) % 4
-            chunk_id = (rank - step) % 4
-      
-            steps.append({
-                'rank': src_rank,
-                'sends': [{'dst_rank': dst_rank, 'chunk_id': chunk_id}],
-                'receives': [{'src_rank': (rank - 1) % 4, 'chunk_id': chunk_id}]
-            })
+    Returns:
+        HCCLProgram instance with mesh allgather implementation
+    """
+    print(f"Creating mesh allgather algorithm for {num_ranks} ranks")
   
-    return steps
+    # Create fully connected topology as mesh
+    topology = fully_connected(num_ranks)
+    print(f"✓ Created mesh topology: {topology.name}")
+  
+    # Create AllGather collective (non-inplace)
+    # chunk_factor=1 means each rank starts with 1 chunk
+    collective = AllGather(num_ranks=num_ranks, chunk_factor=1, inplace=False)
+    print(f"✓ Created AllGather collective: {collective.name}")
+  
+    # Create HCCLProgram with mesh allgather implementation
+    with HCCLProgram(
+        name=f"mesh_allgather_{num_ranks}ranks",
+        topo=topology,
+        collective=collective,
+        instances=1,
+        protocol='Simple'
+    ) as prog:
+        print(f"✓ Created HCCLProgram: {prog.name}")
+        print(f"  - Ranks: {prog.num_ranks}")
+        print(f"  - Protocol: {prog.protocol}")
+  
+        # Implement mesh allgather algorithm
+        # In mesh (fully connected) allgather, all ranks can communicate simultaneously
+        # Each rank receives data from all other ranks in parallel
+  
+        # Step 1: Each rank copies its own data to output buffer
+        for rank in range(num_ranks):
+            own_chunk = chunk(rank, Buffer.input, 0, 1)  # Own chunk from input buffer
+            own_chunk.copy(rank, Buffer.output, rank)    # Copy to output buffer at position rank
+            print(f"  Rank {rank}: copied own chunk to output buffer position {rank}")
+  
+        # Step 2: All-to-all data exchange in mesh topology
+        # In mesh topology, each rank can communicate with all other ranks simultaneously
+        # We'll implement a simplified mesh pattern where each rank receives data from all others
+        for step in range(num_ranks - 1):
+            print(f"\n--- Step {step} ---")
+            for rank in range(num_ranks):
+                # Each rank receives from one other rank per step in round-robin fashion
+                src_rank = (rank + step + 1) % num_ranks
+  
+                # In mesh allgather, we need to simulate receiving data from src_rank
+                # Create a receive operation from src_rank to current rank
+                # The chunk being sent is from src_rank's original position
+                src_chunk = chunk(src_rank, Buffer.output, src_rank, 1)  # Source data from src_rank
+  
+                # Copy the chunk to current rank's output buffer at the source's position
+                dst_chunk = src_chunk.copy(rank, Buffer.output, src_rank)
+                print(f"  Rank {rank} <- Rank {src_rank}: mesh communication")
+                print(f"    ✓ Received chunk from rank {src_rank} at position {src_rank}")
+  
+        print(f"\n✓ Mesh AllGather algorithm implementation complete")
+  
+        return prog
 
-# 创建算法实例
-algorithm = Algorithm.make_implementation(
-    topology=topology,
-    collective=collective,
-    steps=create_ring_allreduce_steps()
-)
+def main():
+    """Test mesh allgather with 8 ranks."""
+    print("=== HCCLang Mesh AllGather Implementation ===")
+    print()
+  
+    num_ranks = 8
+    print("=" * 50)
+    print(f"Testing Mesh AllGather with {num_ranks} ranks")
+    print("=" * 50)
+  
+    # Create the algorithm
+    program = mesh_allgather_algorithm(num_ranks)
+  
+    print()
+    print("=== Generating Mesh HCCL C++ Code ===")
+  
+    # Configure code generation
+    output_dir = f"generated_mesh_allgather_{num_ranks}ranks"
+    template_dir = os.path.join(os.path.dirname(__file__), "..", "..", "hcclang", "runtime", "templates")
+  
+    config = HcclCodeGenConfig(
+        collective=CollectiveType.ALLGATHER,
+        topology=TopologyType.MESH,
+        output_dir=output_dir,
+        template_dir=template_dir,
+        algorithm_name=program.name,
+        num_ranks=program.num_ranks,
+        num_steps=0  # Will be calculated from program
+    )
+  
+    # Initialize transpiler
+    transpiler = DSLToHcclTranspiler(config)
+  
+    try:
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+  
+        # Generate C++ code files
+        # First convert HCCLProgram to lower-level Program representation
+        lower_program = program.lower()
+  
+        # Debug: Print analysis results from enhanced transpiler
+        print(f"\n--- Transpiler Analysis Debug ---")
+        analysis = transpiler._analyze_communication_pattern(lower_program)
+        print(f"DSL Program Analysis Results:")
+        print(f"  - Total steps: {analysis['total_steps']}")
+        print(f"  - Max rank: {analysis['max_rank']}")
+        print(f"  - Number of mesh connections: {len(analysis['communication_pairs'])}")
+        print(f"  - Communication pairs: {list(analysis['communication_pairs'])[:10]}...")  # Show first 10 pairs
+        print(f"  - Total communication pairs: {len(analysis['communication_pairs'])}")
+        print(f"  - Communication phases: {analysis['communication_phases']}")
+        for i, phase in enumerate(analysis['communication_phases'], 1):
+            print(f"    Phase {i}: {phase}")
+        print(f"  - Pattern: {analysis.get('pattern', 'NOT_SET')}")
+        print(f"  - Communication pattern: {analysis.get('communication_pattern', 'NOT_SET')}")
+        print(f"  - Topology type: {analysis.get('topology_type', 'NOT_SET')}")
+        print(f"  - Peer calculation: {analysis.get('peer_calculation', 'NOT_SET')}")
+  
+        # Generate code using the transpiler
+        generated_files = transpiler.transpile_program(lower_program)
+  
+        print(f"\n--- Generated Algorithm Steps Preview (first 800 chars) ---")
+        if 'alg_source' in generated_files:
+            try:
+                with open(generated_files['alg_source'], 'r') as f:
+                    content = f.read()
+                    # Find the algorithm implementation
+                    if "AllGather Algorithm Implementation" in content:
+                        start = content.find("AllGather Algorithm Implementation")
+                        preview = content[start:start+800]
+                        print(preview)
+                    else:
+                        print(content[:800])
+            except Exception as e:
+                print(f"Could not read generated file: {e}")
+  
+        print(f"\nGenerated {len(generated_files)} C++ files:")
+        for file_type, file_path in generated_files.items():
+            print(f"  - {file_type}: {file_path}")
+  
+        print(f"\n--- RunAllGather Function Preview in alg_source ---")
+        if 'alg_source' in generated_files:
+            try:
+                with open(generated_files['alg_source'], 'r') as f:
+                    content = f.read()
+                    # Find RunAllGather function
+                    if "RunAllGather" in content:
+                        start = content.find("HcclResult AllgatherMesh::RunAllGather")
+                        if start == -1:
+                            start = content.find("RunAllGather")
+                        end = content.find("}", start)
+                        if end != -1:
+                            preview = content[start:end+1]
+                            # Show last 200 chars
+                            print(preview[-200:])
+                        else:
+                            print("Could not find end of RunAllGather function")
+                    else:
+                        print("RunAllGather function not found")
+            except Exception as e:
+                print(f"Could not read generated file: {e}")
+  
+        print(f"✅ Successfully generated HCCL code for {num_ranks} ranks")
+        print(f"   Output directory: {os.path.dirname(generated_files.get('alg_source', ''))}")
+  
+        print(f"\n--- Verifying DSL-to-HCCL Mappings ---")
+        for file_type, file_path in generated_files.items():
+            if file_path.endswith('.cc'):
+                try:
+                    with open(file_path, 'r') as f:
+                        content = f.read()
+                        operations = []
+                        if "copy" in content.lower():
+                            operations.append("copy operation")
+                        if "send" in content.lower():
+                            operations.append("send operation")
+                        if "recv" in content.lower():
+                            operations.append("recv operation")
+                        if "txasync" in content.lower():
+                            operations.append("txasync operation")
+                        if "rxasync" in content.lower():
+                            operations.append("rxasync operation")
+    
+                        unsupported = []
+                        if "TODO" in content:
+                            unsupported.append("TODO markers")
+                        if "NOT_IMPLEMENTED" in content:
+                            unsupported.append("NOT_IMPLEMENTED")
+    
+                        operations_str = ", ".join(operations) if operations else "no operations"
+                        unsupported_str = ", ".join(unsupported) if unsupported else "no unsupported operations"
+                        print(f"   File {os.path.basename(file_path)}: {operations_str}, {unsupported_str}")
+                except Exception as e:
+                    print(f"   File {os.path.basename(file_path)}: could not analyze - {e}")
+  
+    except Exception as e:
+        print(f"❌ Code generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return
 
-# 配置生成参数
-settings = {
-    "ranks": 4,
-    "chunks_per_rank": 4,
-    "chunk_size_bytes": 1048576,
-    "data_type": "HCCL_DATA_TYPE_FP32",
-    "reduce_op": "HCCL_REDUCE_SUM"
-}
-
-# 生成HCCL JSON输出
-save_hccl_algorithm(algorithm, settings, "ring_allreduce.json")
+if __name__ == "__main__":
+    main()
 ```
-
-### CM384拓扑使用示例
-
-HCCLang对华为昇腾CM384平台提供了专门的支持，以下示例展示了如何在CM384拓扑上定义算法：
-
-```python
-from hcclang.topologies.CM384 import CM384_128_slice, CM384_full
-
-# 使用128个NPU的切片配置
-topology_128 = CM384_128_slice()
-print(f"128-NPU拓扑：{topology_128.num_nodes()}个节点")
-
-# 使用完整的384个NPU配置
-topology_384 = CM384_full()
-print(f"384-NPU拓扑：{topology_384.num_nodes()}个节点")
-
-# 查看节点间连接带宽
-intra_node_bw = topology_128.link(0, 1)  # 节点内UB连接：392 GB/s
-inter_node_bw = topology_128.link(0, 8)  # 节点间RDMA连接：400 GB/s
-```
-
-## 文档和教程使用指南
-
-HCCLang提供了丰富的学习资源，其中最重要的是交互式Jupyter教程。
-
-### 交互式教程
-
-`docs/ring_allreduce_tutorial.ipynb`是一个完整的交互式教程，涵盖了从算法理论到具体实现的全过程。该教程的特点包括：
-
-**理论基础**：详细解释了Ring AllReduce算法的数学原理和通信模式，包括reduce-scatter和all-gather两个阶段的详细分析。
-
-**可视化展示**：通过图形化的方式展示4个节点在环形拓扑中的数据流动过程，帮助读者直观理解算法执行过程。
-
-**代码实践**：提供了完整的可执行代码，读者可以逐步运行每个代码单元，观察输出结果。
-
-**性能分析**：包含了算法复杂度分析和性能优化建议，帮助读者理解不同设计选择的影响。
-
-### 使用教程的步骤
-
-启动Jupyter环境：
-
-```bash
-# 确保在hcclang环境中
-conda activate hcclang
-
-# 启动JupyterLab
-jupyter lab docs/ring_allreduce_tutorial.ipynb
-```
-
-教程按照渐进式的结构组织，建议按顺序学习：
-
-1. **算法背景**：理解Ring AllReduce的基本概念
-2. **拓扑定义**：学习如何定义和配置网络拓扑
-3. **步骤构造**：掌握算法步骤的详细定义方法
-4. **代码生成**：了解JSON输出格式和HCCL集成过程
-5. **验证分析**：学习如何验证算法正确性和分析性能
 
 ## HCCLang模块使用详解
 
@@ -255,7 +331,7 @@ algorithm.add_step(step)
 
 ```python
 from hcclang.topologies import ring, tree, mesh
-from hcclang.topologies.CM384 import CM384_128_slice
+from hcclang.topologies.cm384 import cm384_full
 
 # 标准拓扑
 ring_topo = ring(8)           # 8节点环形
@@ -263,7 +339,7 @@ tree_topo = tree(16)          # 16节点树形
 mesh_topo = mesh(4, 4)        # 4x4网格
 
 # 专用拓扑
-cm384_topo = CM384_128_slice() # CM384 128-NPU配置
+cm384_topo = cm384_full() # CM384 384-NPU配置
 
 # 查看拓扑属性
 print(f"节点数量：{ring_topo.num_nodes()}")
@@ -287,24 +363,6 @@ optimized_algo = hierarchical_alltoall(
     intra_node_algo="ring",
     inter_node_algo="tree"
 )
-```
-
-### 运行时代码生成
-
-运行时模块负责生成可执行代码：
-
-```python
-from hcclang.runtime.hcclize import hcclize, save_hccl_algorithm
-from hcclang.runtime.ncclize import ncclize  # NCCL兼容性
-
-# 生成HCCL JSON
-json_output = hcclize(algorithm, settings)
-
-# 保存到文件
-save_hccl_algorithm(algorithm, settings, "my_algorithm.json")
-
-# 也可以生成NCCL XML（向后兼容）
-xml_output = ncclize(algorithm, settings)
 ```
 
 ## 高级特性和最佳实践
@@ -340,22 +398,6 @@ hierarchical_algo = create_hierarchical_algorithm(
 
 **负载均衡**：确保所有节点的工作负载均衡，避免出现性能瓶颈。
 
-### 调试和验证
-
-HCCLang提供了完善的调试和验证工具：
-
-```python
-from hcclang.validation import verify_correctness, analyze_performance
-
-# 验证算法正确性
-is_correct = verify_correctness(algorithm, test_data)
-
-# 性能分析
-perf_report = analyze_performance(algorithm, topology)
-print(f"预估通信时间：{perf_report.total_time_ms} ms")
-print(f"带宽利用率：{perf_report.bandwidth_utilization:.2%}")
-```
-
 ## 扩展和定制
 
 HCCLang的架构设计充分考虑了扩展性，开发者可以轻松添加新的拓扑定义、优化策略和代码生成器。
@@ -365,7 +407,7 @@ HCCLang的架构设计充分考虑了扩展性，开发者可以轻松添加新�
 创建新的拓扑定义需要继承基础拓扑类：
 
 ```python
-from hcclang.topologies.base import Topology
+from hcclang.topologies.topo_tools import Topology
 
 class MyCustomTopology(Topology):
     def __init__(self, nodes, connections):
@@ -377,53 +419,22 @@ class MyCustomTopology(Topology):
         pass
 ```
 
-### 自定义优化器
-
-添加新的优化策略：
-
-```python
-from hcclang.optimization.base import Optimizer
-
-class MyOptimizer(Optimizer):
-    def optimize(self, algorithm):
-        # 实现优化逻辑
-        return optimized_algorithm
-```
-
 ## 项目状态和路线图
 
-HCCLang项目目前已经具备了完整的核心功能，但仍在持续发展和完善中。
+HCCLang项目目前已经初步的转译功能，但仍在持续发展和完善中。
 
 ### 当前功能状态
 
 **已完成功能**：
 
-- ✅ 完整的DSL语法和编译器
-- ✅ HCCL JSON代码生成
-- ✅ CM384拓扑支持
-- ✅ 标准算法库
-- ✅ 交互式教程和文档
-- ✅ 基础性能分析工具
+- ✅ 完整的DSL语法
+- ✅ 支持 AllGather 和 AlltoAll 算子的部分转译
 
 **开发中功能**：
 
-- 🚧 高级优化算法
-- 🚧 自动化算法生成
-- 🚧 运行时性能分析
-- 🚧 可视化工具增强
-
-**计划功能**：
-
-- 📋 更多硬件平台支持
-- 📋 算法正确性形式化验证
-- 📋 机器学习辅助优化
-- 📋 云原生部署支持
-
-### 贡献指南
-
-HCCLang欢迎社区贡献，无论是bug修复、功能增强还是文档改进。项目遵循开放协作的原则，鼓励研究人员和工程师共同推进集合通信算法的发展。
-
-对于希望贡献代码的开发者，建议首先阅读项目的代码规范和设计文档，然后从小的功能改进开始，逐步熟悉系统架构。对于算法研究人员，可以通过提供新的算法实现和性能基准测试来为项目做出贡献。
+- 🚧 更多的算子、算法支持
+- 🚧 自动的优化器支持
+- 🚧 对算法的验证器支持
 
 ## 许可证和致谢
 
