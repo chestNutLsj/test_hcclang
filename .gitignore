@@ -141,3 +141,6 @@ HCCL_SYNC_MECHANISMS.md
 DevLogs.md
 scripts/*
 cann-hccl/*
+
+# Mac 的系统文件
+.DS_Store
