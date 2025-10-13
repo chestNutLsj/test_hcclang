@@ -275,13 +275,13 @@ def main():
                             operations.append("txasync operation")
                         if "rxasync" in content.lower():
                             operations.append("rxasync operation")
-    
+  
                         unsupported = []
                         if "TODO" in content:
                             unsupported.append("TODO markers")
                         if "NOT_IMPLEMENTED" in content:
                             unsupported.append("NOT_IMPLEMENTED")
-    
+  
                         operations_str = ", ".join(operations) if operations else "no operations"
                         unsupported_str = ", ".join(unsupported) if unsupported else "no unsupported operations"
                         print(f"   File {os.path.basename(file_path)}: {operations_str}, {unsupported_str}")
@@ -428,7 +428,7 @@ HCCLang项目目前已经初步的转译功能，但仍在持续发展和完善�
 **已完成功能**：
 
 - ✅ 完整的DSL语法
-- ✅ 支持 AllGather 和 AlltoAll 算子的部分转译
+- ✅ 支持 AllGather 和 AlltoAll 算子的部分转译（Ring/Mesh）
 
 **开发中功能**：
 
@@ -438,6 +438,6 @@ HCCLang项目目前已经初步的转译功能，但仍在持续发展和完善�
 
 ## 许可证和致谢
 
-HCCLang采用MIT许可证，基于Microsoft MSCCLang项目进行开发。我们感谢Microsoft Research团队为集合通信算法研究领域做出的重要贡献，以及华为昇腾团队在硬件平台支持方面提供的技术指导。
+HCCLang采用GPLv2许可证，基于Microsoft MSCCLang项目进行开发。我们感谢Microsoft Research团队为集合通信算法研究领域做出的重要贡献，以及华为昇腾团队在硬件平台支持方面提供的技术指导。
 
 该项目的成功离不开开源社区的支持，特别是在算法验证、性能优化和文档编写方面。我们期待更多的研究人员和工程师加入到这个项目中来，共同推进高性能计算和人工智能领域的发展。

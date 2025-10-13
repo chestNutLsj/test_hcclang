@@ -1,6 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
-# 
+#
 # HCCLang - Adapted for Huawei HCCL Collective Communication Library
 
 from setuptools import setup, find_packages

@@ -141,6 +141,13 @@ HCCL_SYNC_MECHANISMS.md
 DevLogs.md
 scripts/*
 cann-hccl/*
+DSL_HCCL_MAPPING.md
+HCCL_API_ALL.md
 
 # Mac 的系统文件
 .DS_Store
+
+# 为了提交而避免的文件
+hcclize_with_executor_backup.py
+serializeation.py
+ncclize.py

@@ -8,20 +8,20 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "allgather_recursive_doubling.h"
+#include "allgather_ring.h"
 #include "alg_template_register.h"
 
 namespace hccl {
-AllgatherRecursiveDoubling::AllgatherRecursiveDoubling(const HcclDispatcher dispatcher) : AlgTemplateBase(dispatcher)
+AllGatherRing::AllGatherRing(const HcclDispatcher dispatcher) : AlgTemplateBase(dispatcher)
 {
 }
 
-AllgatherRecursiveDoubling::~AllgatherRecursiveDoubling()
+AllGatherRing::~AllGatherRing()
 {
 }
 
 // Communication primitives
-HcclResult AllgatherRecursiveDoubling::TxVector(const LINK &link, const std::vector<Slice> &txSlices)
+HcclResult AllGatherRing::TxVector(const LINK &link, const std::vector<Slice> &txSlices)
 {
     std::vector<TxMemoryInfo> txMems;
     for (const Slice &txSlice : txSlices) {
@@ -34,7 +34,7 @@ HcclResult AllgatherRecursiveDoubling::TxVector(const LINK &link, const std::vec
     return HCCL_SUCCESS;
 }
 
-HcclResult AllgatherRecursiveDoubling::RxVector(const LINK &link, const std::vector<Slice> &rxSlices)
+HcclResult AllGatherRing::RxVector(const LINK &link, const std::vector<Slice> &rxSlices)
 {
     std::vector<RxMemoryInfo> rxMems;
     for (const Slice &rxSlice : rxSlices) {
@@ -48,7 +48,7 @@ HcclResult AllgatherRecursiveDoubling::RxVector(const LINK &link, const std::vec
     return HCCL_SUCCESS;
 }
 
-HcclResult AllgatherRecursiveDoubling::Tx(const LINK &link, const Slice &txSlice)
+HcclResult AllGatherRing::Tx(const LINK &link, const Slice &txSlice)
 {
     DeviceMem srcMem = outputMem_.range(txSlice.offset, txSlice.size);
     HCCL_DEBUG("tx srcMem[%p] range[%llu] size[%llu] ", srcMem.ptr(), txSlice.offset, txSlice.size);
@@ -56,7 +56,7 @@ HcclResult AllgatherRecursiveDoubling::Tx(const LINK &link, const Slice &txSlice
     return HCCL_SUCCESS;
 }
 
-HcclResult AllgatherRecursiveDoubling::Rx(const LINK &link, const Slice &rxSlice)
+HcclResult AllGatherRing::Rx(const LINK &link, const Slice &rxSlice)
 {
     DeviceMem dstMem = outputMem_.range(rxSlice.offset, rxSlice.size);
     HCCL_DEBUG("rx dstMem[%p] range[%llu], size[%llu] ",  dstMem.ptr(),
@@ -65,11 +65,11 @@ HcclResult AllgatherRecursiveDoubling::Rx(const LINK &link, const Slice &rxSlice
     return HCCL_SUCCESS;
 }
 
-HcclResult AllgatherRecursiveDoubling::RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links)
+HcclResult AllGatherRing::RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links)
 {
     CHK_SMART_PTR_NULL(dispatcher_);
     CHK_PTR_NULL(stream_.ptr());
-    HCCL_INFO("AllgatherRecursiveDoubling run_async rank[%u] ranksize[%u] inputMem[%p] outputMem[%p] count[%llu]", \
+    HCCL_INFO("AllGatherRing run_async rank[%u] ranksize[%u] inputMem[%p] outputMem[%p] count[%llu]", \
               rank, rankSize, inputMem_.ptr(), outputMem_.ptr(), count_);
 
     if (rankSize == 1) {
@@ -82,13 +82,13 @@ HcclResult AllgatherRecursiveDoubling::RunAsync(const u32 rank, const u32 rankSi
     // Algorithm-specific communication link setup
     // Generic communication pattern 
     if (links.size() < rankSize) {
-        HCCL_ERROR("[AllgatherRecursiveDoubling][RunAsync]rank[%u] linkSize is less than rankSize", rank);
+        HCCL_ERROR("[AllGatherRing][RunAsync]rank[%u] linkSize is less than rankSize", rank);
         return HCCL_E_INTERNAL;
     }
 
     u32 unitSize = DataUnitSize(dataType_);
     if (unitSize == 0) {
-        HCCL_ERROR("[AllgatherRecursiveDoubling][RunAsync]unitSize is zero");
+        HCCL_ERROR("[AllGatherRing][RunAsync]unitSize is zero");
         return HCCL_E_INTERNAL;
     }
 
@@ -121,15 +121,15 @@ HcclResult AllgatherRecursiveDoubling::RunAsync(const u32 rank, const u32 rankSi
         // For non-ring algorithms, barrier is handled in algorithm implementation
     }
 
-    HCCL_INFO("AllgatherRecursiveDoubling finished: rank[%u] end", rank);
+    HCCL_INFO("AllGatherRing finished: rank[%u] end", rank);
     return HCCL_SUCCESS;
 }
 
 // Core algorithm implementation
-HcclResult AllgatherRecursiveDoubling::RunAllgather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
+HcclResult AllGatherRing::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
 {
     if (outputSlices.size() < rankSize) {
-        HCCL_ERROR("[Run][Allgather]rank[%u] OutputSlice Size is less than rank size", rank);
+        HCCL_ERROR("[Run][AllGather]rank[%u] OutputSlice Size is less than rank size", rank);
         return HCCL_E_INTERNAL;
     }
     HcclResult ret = HCCL_SUCCESS;
@@ -137,59 +137,51 @@ HcclResult AllgatherRecursiveDoubling::RunAllgather(u32 rank, u32 rankSize, cons
     // DSL-generated algorithm implementation
         u32 unitSize = DataUnitSize(dataType_);
     if (unitSize == 0) {
-        HCCL_ERROR("[AllgatherRecursiveDoubling][RunAsync]unitSize is zero");
+        HCCL_ERROR("[AllGatherRing][RunAsync]unitSize is zero");
         return HCCL_E_INTERNAL;
     }
     u64 sliceSize = count_ * unitSize;
 
-    // Algorithm generated from DSL loop structure analysis
-    // Loop analysis: {'has_loops': False, 'loop_type': 'unknown', 'iteration_variable': None, 'loop_condition': None, 'loop_increment': None, 'loop_body_operations': [], 'peer_calculation_pattern': None, 'data_exchange_pattern': None, 'iteration_count': 0}
-    // Debug: Found 120 DSL operations
-    // Forced recursive doubling pattern detection
-    // Detected recursive_doubling algorithm with xor peer calculation
-    // XOR-based communication loop (detected from DSL)
-    for (u32 step = 0; step < 3; step++) {
-            u32 peer = rank ^ (1 << step);  // XOR pattern from DSL
-        if (peer >= rankSize) {
-            continue;  // Skip invalid peers
-        }
-        if (peer >= links.size()) {
-            HCCL_ERROR("[AllgatherRecursiveDoubling][Loop] peer[%u] >= linkSize[%zu]", peer, links.size());
-            return HCCL_E_INTERNAL;
-        }
-        CHK_SMART_PTR_NULL(links[peer]);
+    // Ring AllGather Algorithm Implementation
+    // Dynamic ring topology with peer-based communication
+    
+    for (u32 step = 0; step < rankSize - 1; step++) {
+        // Ring communication: send to next rank, receive from previous rank
+        u32 sendPeer = (rank + 1) % rankSize;
+        u32 recvPeer = (rank - 1 + rankSize) % rankSize;
         
-        // Synchronization handshake before data transfer
-        CHK_RET(links[peer]->TxAck(stream_));
-        CHK_RET(links[peer]->RxAck(stream_));
+        // Chunk forwarding pattern in ring
+        u32 sendChunkIdx = (rank - step + rankSize) % rankSize;
+        u32 recvChunkIdx = (rank - step - 1 + rankSize) % rankSize;
         
-        // Calculate data range to exchange based on step
-        u32 exchangeSize = 1 << step;  // 2^step elements to exchange
-        u32 startRank = rank & (~((1 << (step + 1)) - 1));  // Aligned start rank
+        // Prepare memory for send and receive operations
+        u64 chunkSize = sliceSize;
+        DeviceMem srcMem = outputMem_.range(sendChunkIdx * chunkSize, chunkSize);
+        DeviceMem dstMem = outputMem_.range(recvChunkIdx * chunkSize, chunkSize);
         
-        // Send data that peer needs
-        for (u32 sendRank = startRank; sendRank < startRank + exchangeSize; sendRank++) {
-                if (sendRank < rankSize && sendRank != peer) {
-                        Slice sendSlice = outputSlices[sendRank];
-                        CHK_RET(Tx(links[peer], sendSlice));
-                }
+        // Dynamic link selection for ring peers
+        if (sendPeer >= links.size() || recvPeer >= links.size()) {
+                HCCL_ERROR("[AllGatherRing][Ring] peer out of bounds: send[%u] recv[%u] linkSize[%zu]",
+                    sendPeer, recvPeer, links.size());
+                return HCCL_E_INTERNAL;
         }
         
-        // Receive data from peer
-        for (u32 recvRank = startRank + exchangeSize; recvRank < startRank + (exchangeSize * 2); recvRank++) {
-                if (recvRank < rankSize && recvRank != rank) {
-                        Slice recvSlice = outputSlices[recvRank];
-                        CHK_RET(Rx(links[peer], recvSlice));
-                }
-        }
+        // Asynchronous ring communication
+        CHK_RET(links[recvPeer]->TxAck(stream_));
+        CHK_RET(links[sendPeer]->RxAck(stream_));
         
-        // Wait for completion
-        CHK_RET(links[peer]->TxWaitDone(stream_));
-        CHK_RET(links[peer]->RxWaitDone(stream_));
+        CHK_RET(links[sendPeer]->TxAsync(UserMemType::OUTPUT_MEM,
+            sendChunkIdx * chunkSize + baseOffset_, srcMem.ptr(), chunkSize, stream_));
+        CHK_RET(links[recvPeer]->RxAsync(UserMemType::OUTPUT_MEM,
+            recvChunkIdx * chunkSize + baseOffset_, dstMem.ptr(), chunkSize, stream_));
+        
+        // Wait for communication completion
+        CHK_RET(links[recvPeer]->RxWaitDone(stream_));
+        CHK_RET(links[sendPeer]->TxWaitDone(stream_));
     }
 
     return HCCL_SUCCESS;
 }
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALLGATHER_RECURSIVE_DOUBLING, AllgatherRecursiveDoubling);
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_RING, AllGatherRing);
 }  // namespace hccl
