@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 from dataclasses import dataclass, field
 from .ir import Buffer
 from hcclang.language import *

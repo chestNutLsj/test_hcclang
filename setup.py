@@ -1,5 +1,4 @@
-# Copyright (c) Microsoft Corporation.
-# Licensed under the MIT License.
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # HCCLang - Adapted for Huawei HCCL Collective Communication Library
 

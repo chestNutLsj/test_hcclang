@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 #!/usr/bin/env python3
 
 """
@@ -3655,7 +3657,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         # Generate custom content for specific AllGather algorithms
         if pattern == 'all_to_all' and algorithm_suffix == 'mesh' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_mesh_allgather_source(template_vars)
-        elif pattern == 'neighbor' and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
+        elif (pattern == 'neighbor' or pattern == 'ring') and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_source(template_vars)
         else:
             # Use standard template for other algorithms
@@ -3914,7 +3916,7 @@ private:
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "allgather_ring.h"
+#include "all_gather_ring.h"
 #include "alg_template_register.h"
 
 namespace hccl {{

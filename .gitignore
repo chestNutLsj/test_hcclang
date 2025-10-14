@@ -134,12 +134,13 @@ GEMINI.md
 
 # 所有backup字段的文件/目录都不上传
 *backup*
+examples/allgather/backup*/
 
 # 不重要的文档不上传
 HCCL_API_REFERENCE.md
 HCCL_SYNC_MECHANISMS.md
 DevLogs.md
-scripts/*
+scripts/
 cann-hccl/*
 DSL_HCCL_MAPPING.md
 HCCL_API_ALL.md
@@ -148,6 +149,4 @@ HCCL_API_ALL.md
 .DS_Store
 
 # 为了提交而避免的文件
-hcclize_with_executor_backup.py
-serializeation.py
-ncclize.py
+hcclang/runtime/hcclize_with_executor_backup.py

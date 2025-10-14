@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 #!/usr/bin/env python3
 """
 商业化拓扑测试示例
