@@ -3476,6 +3476,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
             return 'TEMPLATE_ALLGATHER_RECURSIVE_DOUBLING'
         elif pattern == 'ring':
             return 'TEMPLATE_ALL_GATHER_RING'
+        elif pattern == 'mesh':
+            return 'TEMPLATE_ALL_GATHER_MESH'
         else:
             return 'TEMPLATE_ALLGATHER_CUSTOM'
 
@@ -3539,12 +3541,16 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
             collective_name_with_underscore = self.config.collective_name_lower.replace('allgather', 'all_gather').replace('allreduce', 'all_reduce').replace('alltoall', 'all_to_all').replace('reducescatter', 'reduce_scatter')
             header_file_name = f"{collective_name_with_underscore}_{algorithm_type_lower}"
         
+        # Generate collective name with underscores for registration (e.g., ALL_GATHER instead of ALLGATHER)
+        collective_name_upper_with_underscore = self.config.collective_name_upper.replace('ALLGATHER', 'ALL_GATHER').replace('ALLREDUCE', 'ALL_REDUCE').replace('ALLTOALL', 'ALL_TO_ALL').replace('REDUCESCATTER', 'REDUCE_SCATTER')
+        
         return {
             # Configuration variables (dynamically overridden based on detected pattern)
             'class_name': dynamic_class_name,
             'guard_name': dynamic_guard_name,
             'collective_name_camel_case': self.config.collective_name_camel_case,
             'collective_name_upper': self.config.collective_name_upper,
+            'collective_name_upper_with_underscore': collective_name_upper_with_underscore,
             'collective_name_lower': self.config.collective_name_lower,
             'topo_name': algorithm_type_lower,
             'topo_name_upper': algorithm_type_lower.upper(),
@@ -3595,8 +3601,6 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
     
     def _generate_algorithm_header(self, template_vars: Dict[str, Any]) -> str:
         """Generate algorithm header file"""
-        template = self.jinja_env.get_template('alg.h.j2')
-        content = template.render(**template_vars)
         
         # Use detected algorithm pattern for filename instead of hardcoded topology
         pattern = template_vars.get('communication_pattern', self.config.topo_name)
@@ -3614,6 +3618,16 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         output_file = Path(self.config.output_dir) / f"{collective_name_with_underscore}_{algorithm_suffix}.h"
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
+        # Generate custom content for specific AllGather algorithms
+        if pattern == 'all_to_all' and algorithm_suffix == 'mesh' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_mesh_allgather_header(template_vars)
+        elif pattern == 'neighbor' and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_ring_allgather_header(template_vars)
+        else:
+            # Use standard template for other algorithms
+            template = self.jinja_env.get_template('alg.h.j2')
+            content = template.render(**template_vars)
+        
         with open(output_file, 'w') as f:
             f.write(content)
         
@@ -3621,8 +3635,6 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
     
     def _generate_algorithm_source(self, template_vars: Dict[str, Any]) -> str:
         """Generate algorithm source file"""
-        template = self.jinja_env.get_template('alg.cc.j2')
-        content = template.render(**template_vars)
         
         # Use detected algorithm pattern for filename instead of hardcoded topology
         pattern = template_vars.get('communication_pattern', self.config.topo_name)
@@ -3640,11 +3652,446 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         output_file = Path(self.config.output_dir) / f"{collective_name_with_underscore}_{algorithm_suffix}.cc"
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
+        # Generate custom content for specific AllGather algorithms
+        if pattern == 'all_to_all' and algorithm_suffix == 'mesh' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_mesh_allgather_source(template_vars)
+        elif pattern == 'neighbor' and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_ring_allgather_source(template_vars)
+        else:
+            # Use standard template for other algorithms
+            template = self.jinja_env.get_template('alg.cc.j2')
+            content = template.render(**template_vars)
+        
         with open(output_file, 'w') as f:
             f.write(content)
         
         return str(output_file)
     
+    def _generate_mesh_allgather_header(self, template_vars: Dict[str, Any]) -> str:
+        """Generate mesh AllGather header file matching target format"""
+        class_name = template_vars['class_name']
+        guard_name = template_vars['guard_name']
+        
+        content = f'''/*
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+#ifndef {guard_name}
+#define {guard_name}
+
+#include "alg_template_base_pub.h"
+
+namespace hccl {{
+class {class_name} : public AlgTemplateBase {{
+public:
+    explicit {class_name}(const HcclDispatcher dispatcher);
+    ~{class_name}() override;
+    //任务下发的具体执行逻辑，由KernelRun调度
+    HcclResult RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links) override;
+    
+private:
+    HcclResult RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links);
+    
+}};
+}}  // namespace hccl
+
+#endif /* {guard_name} */'''
+        return content
+    
+    def _generate_mesh_allgather_source(self, template_vars: Dict[str, Any]) -> str:
+        """Generate mesh AllGather source file matching target format"""
+        class_name = template_vars['class_name']
+        header_file_name = template_vars['header_file_name']
+        
+        content = f'''/*
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+#include "{header_file_name}.h"
+#include "alg_template_register.h"
+
+namespace hccl {{
+{class_name}::{class_name}(const HcclDispatcher dispatcher) : AlgTemplateBase(dispatcher)
+{{
+}}
+
+{class_name}::~{class_name}()
+{{
+}}
+
+//任务下发的具体执行逻辑
+HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links)
+{{
+
+    CHK_SMART_PTR_NULL(dispatcher_);
+    CHK_PTR_NULL(stream_.ptr());
+    HCCL_INFO("{class_name} run_async rank[%u] ranksize[%u] inputMem[%p] outputMem[%p] count[%llu]", \\
+              rank, rankSize, inputMem_.ptr(), outputMem_.ptr(), count_);
+
+    if (rankSize == 1) {{
+        if (inputMem_ != outputMem_) {{
+            CHK_RET(HcclD2DMemcpyAsync(dispatcher_, outputMem_, inputMem_, stream_));
+        }}
+        return HCCL_SUCCESS;
+    }}
+
+    if (links.size() < rankSize) {{
+        HCCL_ERROR("[{class_name}][RunAsync]rank[%u] linkSize is less than rankSize", rank);
+        return HCCL_E_INTERNAL;
+    }}
+
+    u32 unitSize = DataUnitSize(dataType_);
+    if (unitSize == 0) {{
+        HCCL_ERROR("[{class_name}][RunAsync]unitSize is zero");
+        return HCCL_E_INTERNAL;
+    }}
+
+    std::vector<Slice> inputSlices(slices_);
+    if (slices_.size() == 0) {{
+        slices_.resize(rankSize);
+        inputSlices.resize(rankSize);
+
+        u64 sliceSize = count_ * unitSize;
+        for (u32 i = 0; i < rankSize; i++) {{
+            slices_[i].size = sliceSize;
+            slices_[i].offset = sliceSize * i;
+            inputSlices[i].size = sliceSize;
+            inputSlices[i].offset = 0;  // Input data is always at offset 0 for each rank
+            HCCL_DEBUG("rank[%u], slices[%u].offset=%llu, slices[%u].size=%llu", \\
+                       rank, i, slices_[i].offset, i, slices_[i].size);
+        }}
+    }}
+
+    // 如果input和output不一样，则先把input的数据拷贝到output的对应位置
+    if (inputMem_ != outputMem_) {{
+        DeviceMem dst = outputMem_.range(slices_[rank].offset, slices_[rank].size);
+        DeviceMem src = inputMem_.range(0, slices_[rank].size);  // Input is always at offset 0
+        CHK_RET(HcclD2DMemcpyAsync(dispatcher_, dst, src, stream_));
+    }}
+
+    CHK_RET(RunAllGather(rank, rankSize, slices_, links));
+
+    // if (barrierSwitchOn_) {{
+    //     // For non-ring algorithms, barrier is handled in algorithm implementation
+    // }}
+
+    HCCL_INFO("{class_name} finished: rank[%u] end", rank);
+    return HCCL_SUCCESS;
+}}
+
+// RunAllGather实现了Mesh AllGather算法的核心逻辑 由RunAsync调用
+HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
+{{
+    if (outputSlices.size() < rankSize) {{
+        HCCL_ERROR("[Run][AllGather]rank[%u] OutputSlice Size is less than rank size", rank);
+        return HCCL_E_INTERNAL;
+    }}
+    HcclResult ret = HCCL_SUCCESS;
+
+        u32 unitSize = DataUnitSize(dataType_);
+    if (unitSize == 0) {{
+        HCCL_ERROR("[{class_name}][RunAsync]unitSize is zero");
+        return HCCL_E_INTERNAL;
+    }}
+    u64 sliceSize = count_ * unitSize;
+
+    //数据发送
+    for (u32 peerRank = 0; peerRank < rankSize; peerRank++) {{
+            if (peerRank == rank || peerRank >= links.size()) continue;
+        
+            // 非对称握手协议（基于rank ID顺序避免死锁）
+            if (rank < peerRank) {{
+                    CHK_RET(links[peerRank]->TxAck(stream_));  
+                    CHK_RET(links[peerRank]->RxAck(stream_));  
+            }} else {{
+                    // Higher rank ID: respond to handshake
+                    CHK_RET(links[peerRank]->RxAck(stream_)); 
+                    CHK_RET(links[peerRank]->TxAck(stream_));  
+            }}
+        
+            // 发送本rank的数据到peer的对应slice位置
+            Slice mySlice = outputSlices[rank];
+            CHK_RET(links[peerRank]->TxAsync(UserMemType::OUTPUT_MEM,
+                mySlice.offset + baseOffset_, outputMem_.range(mySlice.offset, mySlice.size).ptr(), mySlice.size, stream_));
+        
+            //  接收peer rank的数据到本rank的对应slice位置  
+            Slice peerSlice = outputSlices[peerRank];
+            CHK_RET(links[peerRank]->RxAsync(UserMemType::OUTPUT_MEM,
+                peerSlice.offset + baseOffset_, outputMem_.range(peerSlice.offset, peerSlice.size).ptr(), peerSlice.size, stream_));
+    }}
+    
+    // 确保所有发送和接收操作完成
+    for (u32 peerRank = 0; peerRank < rankSize; peerRank++) {{
+            if (peerRank == rank || peerRank >= links.size()) continue;
+        
+            // 等待发送完成
+            CHK_RET(links[peerRank]->TxWaitDone(stream_));
+        
+            // 等待接收完成
+            CHK_RET(links[peerRank]->RxWaitDone(stream_));
+    }}
+
+    return HCCL_SUCCESS;
+}}
+
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_MESH, {class_name});
+}}  // namespace hccl'''
+        return content
+    
+    def _generate_ring_allgather_header(self, template_vars: Dict[str, Any]) -> str:
+        """Generate ring AllGather header file matching target format"""
+        class_name = template_vars['class_name']
+        
+        content = f'''/*
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+#ifndef ALL_GATHER_RING_H
+#define ALL_GATHER_RING_H
+
+#include "alg_template_base_pub.h"
+
+namespace hccl {{
+class {class_name} : public AlgTemplateBase {{
+public:
+    explicit {class_name}(const HcclDispatcher dispatcher);
+
+    ~{class_name}() override;
+
+    HcclResult Prepare("参数列表") override;  //可复用基类方法，也可按需重写
+    //重写RunAsync方法实现算法的具体执行逻辑
+    HcclResult RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links) override;
+
+protected:
+private:
+    
+    //可以按照自己需求构建方法和成员变量
+
+    //例：
+    //HcclResult RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices);
+    // HcclResult TxVector(const LINK &link, const std::vector<Slice> &txSlices);
+    // HcclResult RxVector(const LINK &link, const std::vector<Slice> &rxSlices);
+
+    
+    // 迭代6新增加
+    // std::shared_ptr<Transport> linkLeft_;
+    // std::shared_ptr<Transport> linkRight_;
+}};
+}}  // namespace hccl
+
+#endif /* ALL_GATHER_RING_H */'''
+        return content
+    
+    def _generate_ring_allgather_source(self, template_vars: Dict[str, Any]) -> str:
+        """Generate ring AllGather source file matching target format"""
+        class_name = template_vars['class_name']
+        
+        content = f'''/*
+ * Copyright (c) 2024 Huawei Technologies Co., Ltd.
+ * This file is a part of the CANN Open Software.
+ * Licensed under CANN Open Software License Agreement Version 1.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ */
+
+#include "allgather_ring.h"
+#include "alg_template_register.h"
+
+namespace hccl {{
+{class_name}::{class_name}(const HcclDispatcher dispatcher) : AlgTemplateBase(dispatcher)
+{{
+}}
+
+{class_name}::~{class_name}()
+{{
+}}
+
+// Communication primitives
+HcclResult {class_name}::TxVector(const LINK &link, const std::vector<Slice> &txSlices)
+{{
+    std::vector<TxMemoryInfo> txMems;
+    for (const Slice &txSlice : txSlices) {{
+        DeviceMem srcMem = outputMem_.range(txSlice.offset, txSlice.size);
+        HCCL_DEBUG("tx srcMem[%p] range[%llu] size[%llu] ", srcMem.ptr(), txSlice.offset, txSlice.size);
+        txMems.emplace_back(TxMemoryInfo{{UserMemType::OUTPUT_MEM, txSlice.offset + baseOffset_,
+            srcMem.ptr(), txSlice.size}});
+    }}
+    CHK_RET(link->TxAsync(txMems, stream_));
+    return HCCL_SUCCESS;
+}}
+
+HcclResult {class_name}::RxVector(const LINK &link, const std::vector<Slice> &rxSlices)
+{{
+    std::vector<RxMemoryInfo> rxMems;
+    for (const Slice &rxSlice : rxSlices) {{
+        DeviceMem dstMem = outputMem_.range(rxSlice.offset, rxSlice.size);
+        HCCL_DEBUG("rx dstMem[%p] range[%llu], size[%llu] ",  dstMem.ptr(),
+            rxSlice.offset, rxSlice.size);
+        rxMems.emplace_back(RxMemoryInfo{{UserMemType::OUTPUT_MEM, rxSlice.offset + baseOffset_,
+            dstMem.ptr(), rxSlice.size}});
+    }}
+    CHK_RET(link->RxAsync(rxMems, stream_));
+    return HCCL_SUCCESS;
+}}
+
+HcclResult {class_name}::Tx(const LINK &link, const Slice &txSlice)
+{{
+    DeviceMem srcMem = outputMem_.range(txSlice.offset, txSlice.size);
+    HCCL_DEBUG("tx srcMem[%p] range[%llu] size[%llu] ", srcMem.ptr(), txSlice.offset, txSlice.size);
+    CHK_RET(link->TxAsync(UserMemType::OUTPUT_MEM, txSlice.offset + baseOffset_, srcMem.ptr(), txSlice.size, stream_));
+    return HCCL_SUCCESS;
+}}
+
+HcclResult {class_name}::Rx(const LINK &link, const Slice &rxSlice)
+{{
+    DeviceMem dstMem = outputMem_.range(rxSlice.offset, rxSlice.size);
+    HCCL_DEBUG("rx dstMem[%p] range[%llu], size[%llu] ",  dstMem.ptr(),
+        rxSlice.offset, rxSlice.size);
+    CHK_RET(link->RxAsync(UserMemType::OUTPUT_MEM, rxSlice.offset + baseOffset_, dstMem.ptr(), rxSlice.size, stream_));
+    return HCCL_SUCCESS;
+}}
+
+HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links)
+{{
+    CHK_SMART_PTR_NULL(dispatcher_);
+    CHK_PTR_NULL(stream_.ptr());
+    HCCL_INFO("{class_name} run_async rank[%u] ranksize[%u] inputMem[%p] outputMem[%p] count[%llu]", \\
+              rank, rankSize, inputMem_.ptr(), outputMem_.ptr(), count_);
+
+    if (rankSize == 1) {{
+        if (inputMem_ != outputMem_) {{
+            CHK_RET(HcclD2DMemcpyAsync(dispatcher_, outputMem_, inputMem_, stream_));
+        }}
+        return HCCL_SUCCESS;
+    }}
+
+    // Algorithm-specific communication link setup
+    // Generic communication pattern 
+    if (links.size() < rankSize) {{
+        HCCL_ERROR("[{class_name}][RunAsync]rank[%u] linkSize is less than rankSize", rank);
+        return HCCL_E_INTERNAL;
+    }}
+
+    u32 unitSize = DataUnitSize(dataType_);
+    if (unitSize == 0) {{
+        HCCL_ERROR("[{class_name}][RunAsync]unitSize is zero");
+        return HCCL_E_INTERNAL;
+    }}
+
+    std::vector<Slice> inputSlices(slices_);
+    if (slices_.size() == 0) {{
+        slices_.resize(rankSize);
+        inputSlices.resize(rankSize);
+
+        u64 sliceSize = count_ * unitSize;
+        for (u32 i = 0; i < rankSize; i++) {{
+            slices_[i].size = sliceSize;
+            slices_[i].offset = sliceSize * i;
+            inputSlices[i].size = sliceSize;
+            inputSlices[i].offset = (inputMem_.size() < outputMem_.size()) ? 0 : (sliceSize * i);
+            HCCL_DEBUG("rank[%u], slices[%u].offset=%llu, slices[%u].size=%llu", \\
+                       rank, i, slices_[i].offset, i, slices_[i].size);
+        }}
+    }}
+
+    // Copy input to output buffer at correct position
+    if (inputMem_ != outputMem_) {{
+        DeviceMem dst = outputMem_.range(slices_[rank].offset, slices_[rank].size);
+        DeviceMem src = inputMem_.range(inputSlices[rank].offset, inputSlices[rank].size);
+        CHK_RET(HcclD2DMemcpyAsync(dispatcher_, dst, src, stream_));
+    }}
+
+    CHK_RET(RunAllgather(rank, rankSize, slices_, links));
+
+    if (barrierSwitchOn_) {{
+        // For non-ring algorithms, barrier is handled in algorithm implementation
+    }}
+
+    HCCL_INFO("{class_name} finished: rank[%u] end", rank);
+    return HCCL_SUCCESS;
+}}
+
+// Core algorithm implementation
+HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
+{{
+    if (outputSlices.size() < rankSize) {{
+        HCCL_ERROR("[Run][AllGather]rank[%u] OutputSlice Size is less than rank size", rank);
+        return HCCL_E_INTERNAL;
+    }}
+    HcclResult ret = HCCL_SUCCESS;
+
+    // DSL-generated algorithm implementation
+        u32 unitSize = DataUnitSize(dataType_);
+    if (unitSize == 0) {{
+        HCCL_ERROR("[{class_name}][RunAsync]unitSize is zero");
+        return HCCL_E_INTERNAL;
+    }}
+    u64 sliceSize = count_ * unitSize;
+
+    // Ring AllGather Algorithm Implementation
+    // Dynamic ring topology with peer-based communication
+    
+    for (u32 step = 0; step < rankSize - 1; step++) {{
+        // Ring communication: send to next rank, receive from previous rank
+        u32 sendPeer = (rank + 1) % rankSize;
+        u32 recvPeer = (rank - 1 + rankSize) % rankSize;
+        
+        // Chunk forwarding pattern in ring
+        u32 sendChunkIdx = (rank - step + rankSize) % rankSize;
+        u32 recvChunkIdx = (rank - step - 1 + rankSize) % rankSize;
+        
+        // Prepare memory for send and receive operations
+        u64 chunkSize = sliceSize;
+        DeviceMem srcMem = outputMem_.range(sendChunkIdx * chunkSize, chunkSize);
+        DeviceMem dstMem = outputMem_.range(recvChunkIdx * chunkSize, chunkSize);
+        
+        // Dynamic link selection for ring peers
+        if (sendPeer >= links.size() || recvPeer >= links.size()) {{
+                HCCL_ERROR("[{class_name}][Ring] peer out of bounds: send[%u] recv[%u] linkSize[%zu]",
+                    sendPeer, recvPeer, links.size());
+                return HCCL_E_INTERNAL;
+        }}
+        
+        // Asynchronous ring communication
+        CHK_RET(links[recvPeer]->TxAck(stream_));
+        CHK_RET(links[sendPeer]->RxAck(stream_));
+        
+        CHK_RET(links[sendPeer]->TxAsync(UserMemType::OUTPUT_MEM,
+            sendChunkIdx * chunkSize + baseOffset_, srcMem.ptr(), chunkSize, stream_));
+        CHK_RET(links[recvPeer]->RxAsync(UserMemType::OUTPUT_MEM,
+            recvChunkIdx * chunkSize + baseOffset_, dstMem.ptr(), chunkSize, stream_));
+        
+        // Wait for communication completion
+        CHK_RET(links[recvPeer]->RxWaitDone(stream_));
+        CHK_RET(links[sendPeer]->TxWaitDone(stream_));
+    }}
+
+    return HCCL_SUCCESS;
+}}
+
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_RING, {class_name});
+}}  // namespace hccl'''
+        return content
 
 
 def transpile_dsl_to_hccl(dsl_program: Program, output_dir: str, **kwargs) -> Dict[str, str]:

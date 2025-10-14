@@ -8,8 +8,8 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#ifndef ALL_GATHER_RING_H
-#define ALL_GATHER_RING_H
+#ifndef ALLGATHER_RING_H
+#define ALLGATHER_RING_H
 
 #include "alg_template_base_pub.h"
 
@@ -17,28 +17,29 @@ namespace hccl {
 class AllGatherRing : public AlgTemplateBase {
 public:
     explicit AllGatherRing(const HcclDispatcher dispatcher);
-
     ~AllGatherRing() override;
 
-    HcclResult Prepare("参数列表") override;  //可复用基类方法，也可按需重写
-    //重写RunAsync方法实现算法的具体执行逻辑
     HcclResult RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links) override;
 
-protected:
 private:
+    // Core algorithm implementation
+    HcclResult RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links);
     
-    //可以按照自己需求构建方法和成员变量
-
-    //例：
-    //HcclResult RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices);
-    // HcclResult TxVector(const LINK &link, const std::vector<Slice> &txSlices);
-    // HcclResult RxVector(const LINK &link, const std::vector<Slice> &rxSlices);
-
+    // Communication primitives
+    HcclResult TxVector(const LINK &link, const std::vector<Slice> &txSlices);
+    HcclResult RxVector(const LINK &link, const std::vector<Slice> &rxSlices);
+    HcclResult Tx(const LINK &link, const Slice &txSlice);
+    HcclResult Rx(const LINK &link, const Slice &rxSlice);
     
-    // 迭代6新增加
-    // std::shared_ptr<Transport> linkLeft_;
-    // std::shared_ptr<Transport> linkRight_;
+    // Utility functions
+    inline u32 ForwordRank(u32 rank, u32 rankSize, u32 preNum) const {
+        return (rank + rankSize - preNum) % rankSize;
+    }
+    
+    // Communication links
+    std::shared_ptr<Transport> linkLeft_;
+    std::shared_ptr<Transport> linkRight_;
 };
 }  // namespace hccl
 
-#endif /* ALL_GATHER_RING_H */
+#endif /* ALLGATHER_RING_H */

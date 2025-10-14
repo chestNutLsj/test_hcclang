@@ -8,7 +8,7 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "{{ collective_name_lower }}_{{ topo_name }}.h"
+#include "{{ header_file_name }}.h"
 #include "alg_template_register.h"
 
 namespace hccl {
@@ -169,5 +169,5 @@ HcclResult {{ class_name }}::Run{{ collective_name_camel_case }}(u32 rank, u32 r
     return HCCL_SUCCESS;
 }
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_{{ collective_name_upper }}_{{ topo_name_upper }}, {{ class_name }});
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_{{ collective_name_upper_with_underscore }}_{{ topo_name_upper }}, {{ class_name }});
 }  // namespace hccl

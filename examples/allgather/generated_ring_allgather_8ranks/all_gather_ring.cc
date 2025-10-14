@@ -8,7 +8,7 @@
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "allgather_ring.h"
+#include "all_gather_ring.h"
 #include "alg_template_register.h"
 
 namespace hccl {
@@ -80,11 +80,20 @@ HcclResult AllGatherRing::RunAsync(const u32 rank, const u32 rankSize, const std
     }
 
     // Algorithm-specific communication link setup
-    // Generic communication pattern 
+    // Ring topology communication links
+    u32 ringPrevRank = (rank + rankSize - 1) % rankSize;
+    u32 ringNextRank = (rank + 1) % rankSize;
+
     if (links.size() < rankSize) {
         HCCL_ERROR("[AllGatherRing][RunAsync]rank[%u] linkSize is less than rankSize", rank);
         return HCCL_E_INTERNAL;
     }
+
+    linkLeft_ = links[ringPrevRank];
+    CHK_SMART_PTR_NULL(linkLeft_);
+
+    linkRight_ = links[ringNextRank];
+    CHK_SMART_PTR_NULL(linkRight_);
 
     u32 unitSize = DataUnitSize(dataType_);
     if (unitSize == 0) {
@@ -115,10 +124,10 @@ HcclResult AllGatherRing::RunAsync(const u32 rank, const u32 rankSize, const std
         CHK_RET(HcclD2DMemcpyAsync(dispatcher_, dst, src, stream_));
     }
 
-    CHK_RET(RunAllgather(rank, rankSize, slices_, links));
+    CHK_RET(RunAllGather(rank, rankSize, slices_, links));
 
     if (barrierSwitchOn_) {
-        // For non-ring algorithms, barrier is handled in algorithm implementation
+        CHK_RET(ExecuteBarrier(linkLeft_, linkRight_));
     }
 
     HCCL_INFO("AllGatherRing finished: rank[%u] end", rank);
@@ -166,9 +175,9 @@ HcclResult AllGatherRing::RunAllGather(u32 rank, u32 rankSize, const std::vector
                 return HCCL_E_INTERNAL;
         }
         
-        // Asynchronous ring communication
-        CHK_RET(links[recvPeer]->TxAck(stream_));
-        CHK_RET(links[sendPeer]->RxAck(stream_));
+        // Corrected Ack protocol: TxAck to receiver, RxAck to sender
+        CHK_RET(links[recvPeer]->TxAck(stream_));  // Tell receiver 'I'm ready to send'
+        CHK_RET(links[sendPeer]->RxAck(stream_));  // Tell sender 'I'm ready to receive'
         
         CHK_RET(links[sendPeer]->TxAsync(UserMemType::OUTPUT_MEM,
             sendChunkIdx * chunkSize + baseOffset_, srcMem.ptr(), chunkSize, stream_));
@@ -176,8 +185,8 @@ HcclResult AllGatherRing::RunAllGather(u32 rank, u32 rankSize, const std::vector
             recvChunkIdx * chunkSize + baseOffset_, dstMem.ptr(), chunkSize, stream_));
         
         // Wait for communication completion
-        CHK_RET(links[recvPeer]->RxWaitDone(stream_));
-        CHK_RET(links[sendPeer]->TxWaitDone(stream_));
+        CHK_RET(links[recvPeer]->RxWaitDone(stream_));  // Wait for receive completion first
+        CHK_RET(links[sendPeer]->TxWaitDone(stream_)); // Then wait for send completion
     }
 
     return HCCL_SUCCESS;
