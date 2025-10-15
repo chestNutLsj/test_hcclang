@@ -2700,12 +2700,98 @@ class DSLToHcclTranspiler:
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#ifndef ALLTOALL_V_NEW_H
-#define ALLTOALL_V_NEW_H
+#ifndef ALLTOALL_V_H
+#define ALLTOALL_V_H
 
-#include "alltoallv_new_pub.h"
+//#include "mc2_handler_pub.h"
+#include "alg_template_register.h"
 
-#endif /* * ALLTOALL_V_NEW_H */
+namespace hccl {
+class AlltoAllVNew : public AlgTemplateBase {
+public:
+    explicit AlltoAllVNew(const HcclDispatcher dispatcher);
+    ~AlltoAllVNew() override;
+    HcclResult RunAsync() override;
+    HcclResult Prepare(PrepareData &param) override;
+
+protected:
+private:
+    HcclResult GenerateSubStreamInfo(const std::vector<Stream> &subStreams,
+        const std::vector<std::shared_ptr<LocalNotify>> &meshSignalMainToSub,
+        const std::vector<std::shared_ptr<LocalNotify>> &meshSignalSubToMain);
+    std::string GetStreamIndexString();
+    u64 CalcMaxSendLen();
+    HcclResult NotifySubStreamStart();
+    HcclResult WaitSubStreamFinish();
+    HcclResult NotifyLocalSubStreamStart();
+    HcclResult WaitLocalSubStreamFinish();
+    u32 CalcNumSubStep();
+    HcclResult NotifyRemoteRankStart(u32 step);
+    HcclResult SDMAwithRemoteRankAndNotifyEnd(u32 step);
+    HcclResult SendRecvData(u32 step, u32 roundIdx);
+
+    void UpdateCurrRankSendInfo(u32 roundIdx, u32 side, u32 destRank, std::vector<SendDataBlock>& sendInfo, u32 maxSendStep);
+    void UpdateCurrRankRecvInfo(u32 roundIdx, u32 side, u32 destRank, std::vector<ReadDataBlock>& readInfo, u32 maxRecvStep);
+    void UpdateOpBaseSubStreamInfo(u32 roundIdx);
+    void UpdateRemoteRankSet(u32 roundIdx, u32 groupRankSize);
+    void UpdatePartialCommunicationRankSetPairWise(u32 roundIdx, u32 groupRankSize);
+    void UpdatePartialCommunicationRankSet(u32 roundIdx, u32 groupRankSize,
+        std::vector<std::vector<std::pair<u32,u32>>> &partialCommRankSet);
+    HcclResult PrepareIntraData(u32 step, std::unordered_map<u32, std::vector<SendDataBlock>> &subStreamSendInfo);
+    void UpdateSendRecvInfo(u32 roundIdx,  std::unordered_map<u32, std::vector<ReadDataBlock>> &subStreamReadInfo,
+        std::unordered_map<u32, std::vector<SendDataBlock>> &subStreamSendInfo,
+        const std::vector<std::vector<std::pair<u32,u32>>> &partialCommRankSet);
+    HcclResult LocalCopy();
+    HcclResult RunGroupFullMeshAlltoall(u32 roundIdx, u32 step);
+    HcclResult RunSDMA(HcclOpMetaInfoDef &opMeta);
+    HcclResult RunSDMATasks(u32 roundIdx, u32 step, u32 groupRankSize, u32 leftRankSize);
+
+
+    Stream mainStream_;
+    u32 userRank_;
+    u32 userRankSize_;
+    u32 podStartRank_;  // 表示一个pod内起始的userRankId
+    u32 podEndRank_; // 表示一个pod内结束的userRankId
+    std::vector<LINK> links_;
+    const SendRecvInfo* localSendRecvInfoPtr_;
+    u32 podNum_;
+    u32 devNumInlocalPod_;
+    u32 rankIdxInPod_;
+    bool isSuPodAsym_;
+    HcclCMDType opType_;
+    bool isBigCount_;
+    bool isA2AlltoallvMutliModule_ = false;
+
+    DeviceMem userInput_;
+    DeviceMem userOutput_;
+    DeviceMem cclInMem_;
+    DeviceMem cclOutMem_;
+    HcclWorkflowMode workMode_;
+    u64 sdmaDataBlockSize_ = 0;
+
+    bool islocalCpyDone_ = false;
+    std::unordered_map<u32, std::vector<SendDataBlock>> subStreamSendInfo_; // 从流当前发送长度和发送的本地偏移
+    std::unordered_map<u32, std::vector<ReadDataBlock>> subStreamReadInfo_; // 从流当前接收长度和接收到的本地偏移
+    std::unordered_map<u32, std::vector<SendDataBlock>> nextSubStreamSendInfo_; // 下一轮从流发送长度和发送的本地偏移
+    std::unordered_map<u32, std::vector<ReadDataBlock>> nextSubStreamReadInfo_; // 下一轮从流接收长度和接收到的本地偏移
+    std::unordered_map<u32, u32> sendNumSubStep_;                       // 需要向对应对端rank发几次数据
+    std::unordered_map<u32, u32> recvNumSubStep_;                       // 需要从对应对端rank收几次数据
+    u32 sdmaConcurrentNum_; // 分组mesh-每组group的ranksize
+    std::vector<std::vector<std::pair<u32,u32>>> partialCommRankSet_;  // 参与通信的rank组合, 第0、1、2个vector分别存放左、右、中的rank
+    std::vector<std::vector<std::pair<u32,u32>>> nextPartialCommRankSet_;  // 下一轮参与通信的rank组合
+    u64 commRounds_ = 0; // 每个rank分组fullmesh后需要通信的轮次
+
+    // 本地拷贝处理相关
+    std::vector<Stream> localSubStream_;
+    std::vector<std::shared_ptr<LocalNotify>> localSignalMainToSub_;
+    std::vector<std::shared_ptr<LocalNotify>> localSignalSubToMain_;
+    // SDMA处理相关
+    std::vector<Stream> sdmaSubStream_;
+    std::vector<std::shared_ptr<LocalNotify>> sdmaMeshSignalMainToSub_;
+    std::vector<std::shared_ptr<LocalNotify>> sdmaMeshSignalSubToMain_;
+};
+} // namespace hccl
+#endif /* ALLTOALL_V_MESH_READ_ONLY_PUB_H */
 '''
     
     def _get_alltoallv_source_content(self, algorithm_name: str) -> str:
@@ -2719,7 +2805,7 @@ class DSLToHcclTranspiler:
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "alltoallv_{algorithm_name}.h"
+#include "{algorithm_name}.h"
 
 namespace hccl {{
 AlltoAllVNew::AlltoAllVNew(const HcclDispatcher dispatcher)
