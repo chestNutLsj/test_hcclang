@@ -4023,7 +4023,7 @@ HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std:
         CHK_RET(HcclD2DMemcpyAsync(dispatcher_, dst, src, stream_));
     }}
 
-    CHK_RET(RunAllgather(rank, rankSize, slices_, links));
+    CHK_RET(RunAllGather(rank, rankSize, slices_, links));
 
     if (barrierSwitchOn_) {{
         // For non-ring algorithms, barrier is handled in algorithm implementation
