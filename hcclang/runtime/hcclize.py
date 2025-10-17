@@ -3565,7 +3565,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         elif pattern == 'ring':
             return 'TEMPLATE_ALL_GATHER_RING'
         elif pattern == 'mesh':
-            return 'TEMPLATE_ALL_GATHER_SEQ'
+            return 'TEMPLATE_ALL_GATHER_MESH_SEQ'
         else:
             return 'TEMPLATE_ALLGATHER_CUSTOM'
 
@@ -3605,9 +3605,9 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
             algorithm_type_lower = 'ring'
             print(f"    - Selected: Ring algorithm")
         elif pattern == 'mesh' or communication_pattern == 'all_to_all':
-            algorithm_suffix = 'Seq'
-            algorithm_type_lower = 'seq'
-            print(f"    - Selected: Seq algorithm")
+            algorithm_suffix = 'MeshSeq'
+            algorithm_type_lower = 'mesh_seq'
+            print(f"    - Selected: MeshSeq algorithm")
         else:
             algorithm_suffix = self.config.topo_name_camel_case
             algorithm_type_lower = self.config.topo_name
@@ -3697,7 +3697,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         elif pattern == 'neighbor':
             algorithm_suffix = 'ring'
         elif pattern == 'all_to_all':
-            algorithm_suffix = 'seq'
+            algorithm_suffix = 'mesh_seq'
         else:
             algorithm_suffix = self.config.topo_name
         
@@ -3707,8 +3707,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate custom content for specific AllGather algorithms
-        if pattern == 'all_to_all' and algorithm_suffix == 'seq' and self.config.collective == CollectiveType.ALLGATHER:
-            content = self._generate_seq_allgather_header(template_vars)
+        if pattern == 'all_to_all' and algorithm_suffix == 'mesh_seq' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_mesh_seq_allgather_header(template_vars)
         elif pattern == 'neighbor' and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_header(template_vars)
         else:
@@ -3731,7 +3731,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         elif pattern == 'neighbor':
             algorithm_suffix = 'ring'
         elif pattern == 'all_to_all':
-            algorithm_suffix = 'seq'
+            algorithm_suffix = 'mesh_seq'
         else:
             algorithm_suffix = self.config.topo_name
         
@@ -3741,8 +3741,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate custom content for specific AllGather algorithms
-        if pattern == 'all_to_all' and algorithm_suffix == 'seq' and self.config.collective == CollectiveType.ALLGATHER:
-            content = self._generate_seq_allgather_source(template_vars)
+        if pattern == 'all_to_all' and algorithm_suffix == 'mesh_seq' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_mesh_seq_allgather_source(template_vars)
         elif (pattern == 'neighbor' or pattern == 'ring') and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_source(template_vars)
         else:
@@ -3755,8 +3755,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         
         return str(output_file)
     
-    def _generate_seq_allgather_header(self, template_vars: Dict[str, Any]) -> str:
-        """Generate seq AllGather header file matching target format"""
+    def _generate_mesh_seq_allgather_header(self, template_vars: Dict[str, Any]) -> str:
+        """Generate mesh_seq AllGather header file matching target format"""
         class_name = template_vars['class_name']
         guard_name = template_vars['guard_name']
         
@@ -3792,8 +3792,8 @@ private:
 #endif /* {guard_name} */'''
         return content
     
-    def _generate_seq_allgather_source(self, template_vars: Dict[str, Any]) -> str:
-        """Generate seq AllGather source file matching target format"""
+    def _generate_mesh_seq_allgather_source(self, template_vars: Dict[str, Any]) -> str:
+        """Generate mesh_seq AllGather source file matching target format"""
         class_name = template_vars['class_name']
         header_file_name = template_vars['header_file_name']
         
@@ -3879,7 +3879,7 @@ HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std:
     return HCCL_SUCCESS;
 }}
 
-// RunAllGather实现了Seq AllGather算法的核心逻辑 由RunAsync调用
+// RunAllGather实现了MeshSeq AllGather算法的核心逻辑 由RunAsync调用
 HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
 {{
     if (outputSlices.size() < rankSize) {{
@@ -3934,7 +3934,7 @@ HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<
     return HCCL_SUCCESS;
 }}
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_SEQ, {class_name});
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_MESH_SEQ, {class_name});
 }}  // namespace hccl'''
         return content
     
