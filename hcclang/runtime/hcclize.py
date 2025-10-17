@@ -1754,7 +1754,7 @@ class DSLToHcclTranspiler:
         
         # Early return for single rank case
         lines.append(self._indent("if (userRankSize_ == 1) {", indent_level))
-        lines.append(self._indent("    HCCL_INFO(\"[AlltoAllVNew][RunAsync] do localcopy with 1 rank\");", indent_level + 1))
+        lines.append(self._indent("    HCCL_INFO(\"[AlltoAllVSeq][RunAsync] do localcopy with 1 rank\");", indent_level + 1))
         lines.append(self._indent("    CHK_RET(LocalCopy());", indent_level + 1))
         lines.append(self._indent("    return HCCL_SUCCESS;", indent_level + 1))
         lines.append(self._indent("}", indent_level))
@@ -1857,7 +1857,7 @@ class DSLToHcclTranspiler:
         lines.append(self._indent("}", indent_level))
         lines.append(self._indent("", indent_level))
         
-        lines.append(self._indent("HCCL_INFO(\"[AlltoAllVNew][RunAsync] AllToAllV algorithm completed successfully\");", indent_level))
+        lines.append(self._indent("HCCL_INFO(\"[AlltoAllVSeq][RunAsync] AllToAllV algorithm completed successfully\");", indent_level))
         
         return lines
     
@@ -2707,10 +2707,10 @@ class DSLToHcclTranspiler:
 #include "alg_template_register.h"
 
 namespace hccl {
-class AlltoAllVNew : public AlgTemplateBase {
+class AlltoAllVSeq : public AlgTemplateBase {
 public:
-    explicit AlltoAllVNew(const HcclDispatcher dispatcher);
-    ~AlltoAllVNew() override;
+    explicit AlltoAllVSeq(const HcclDispatcher dispatcher);
+    ~AlltoAllVSeq() override;
     HcclResult RunAsync() override;
     HcclResult Prepare(PrepareData &param) override;
 
@@ -2808,27 +2808,27 @@ private:
 #include "{algorithm_name}.h"
 
 namespace hccl {{
-AlltoAllVNew::AlltoAllVNew(const HcclDispatcher dispatcher)
+AlltoAllVSeq::AlltoAllVSeq(const HcclDispatcher dispatcher)
     : AlgTemplateBase(dispatcher)
 {{
 }}
 
-AlltoAllVNew::~AlltoAllVNew() {{}}
+AlltoAllVSeq::~AlltoAllVSeq() {{}}
 
 //将输入的 stream 组（子流 subStreams）和配套的通知信号（main ↔ sub stream）进行分类分配，绑定到 SDMA、本地传输的子任务流中，完成内部调度资源准备。
-HcclResult AlltoAllVNew::GenerateSubStreamInfo(const std::vector<Stream> &subStreams,
+HcclResult AlltoAllVSeq::GenerateSubStreamInfo(const std::vector<Stream> &subStreams,
     const std::vector<std::shared_ptr<LocalNotify>> &meshSignalMainToSub,
     const std::vector<std::shared_ptr<LocalNotify>> &meshSignalSubToMain)
 {{
     u32 totalSubstreamSize = sdmaConcurrentNum_;  //单超节点，只需要SDMA主流
     if (subStreams.size() < totalSubstreamSize || meshSignalMainToSub.size() < totalSubstreamSize ||
         meshSignalSubToMain.size() < totalSubstreamSize) {{
-        HCCL_ERROR("[AlltoAllVNew][GenerateSubStreamInfo]subStreamsSize[%zu], meshSignalMainToSubSize[%zu]"\\
+        HCCL_ERROR("[AlltoAllVSeq][GenerateSubStreamInfo]subStreamsSize[%zu], meshSignalMainToSubSize[%zu]"\\
             "meshSignalSubToMainSize[%zu] is smaller than totalSubstreamSize[%u]",subStreams.size(),
             meshSignalMainToSub.size(), meshSignalSubToMain.size(), totalSubstreamSize);
         return HCCL_E_PARA;
     }}
-    CHK_PRT_RET(links_.size() < userRankSize_, HCCL_ERROR("[AlltoAllVNew][GenerateSubStreamInfo]"\\
+    CHK_PRT_RET(links_.size() < userRankSize_, HCCL_ERROR("[AlltoAllVSeq][GenerateSubStreamInfo]"\\
         "links_.size()[%zu] is smaller than userRankSize_[%u].", links_.size(), userRankSize_),
         HCCL_E_PARA);
     HCCL_DEBUG("subStreams.size[%zu], meshSignalMainToSub.size[%zu], links_.size[%zu]",
@@ -2852,7 +2852,7 @@ HcclResult AlltoAllVNew::GenerateSubStreamInfo(const std::vector<Stream> &subStr
 }}
 
 //通信开始前准备各种资源，并根据当前拓扑、rank位置、数据量等信息推导出通信并发度、数据块划分大小等关键调度参数
-HcclResult AlltoAllVNew::Prepare(PrepareData &param)
+HcclResult AlltoAllVSeq::Prepare(PrepareData &param)
 {{
     mainStream_ = param.stream;
     userRank_ = param.userRank;
@@ -2870,7 +2870,7 @@ HcclResult AlltoAllVNew::Prepare(PrepareData &param)
     sdmaConcurrentNum_ = (devNumInlocalPod_ > ALLTOALLV_DIRECT_FULLMESH_SDMA_CONCURRENT_SIZE) ?
         (ALLTOALLV_DIRECT_FULLMESH_SDMA_CONCURRENT_SIZE) : (devNumInlocalPod_);
 
-    CHK_PRT_RET(userRankSize_ == 0, HCCL_ERROR("[AlltoAllVNew][Prepare]userRankSize_ is zero."),
+    CHK_PRT_RET(userRankSize_ == 0, HCCL_ERROR("[AlltoAllVSeq][Prepare]userRankSize_ is zero."),
         HCCL_E_PARA);
 
     userInput_ = param.inputMem;
@@ -2895,9 +2895,9 @@ HcclResult AlltoAllVNew::Prepare(PrepareData &param)
     if (sdmaDataBlockSize_> HCCL_MIN_SLICE_ALIGN_910B) {{
         sdmaDataBlockSize_= (sdmaDataBlockSize_/ HCCL_MIN_SLICE_ALIGN_910B) * HCCL_MIN_SLICE_ALIGN_910B;
     }}
-    CHK_PRT_RET(sdmaDataBlockSize_== 0, HCCL_ERROR("[AlltoAllVNew][Prepare]sdmaDataBlockSize_is zero."),
+    CHK_PRT_RET(sdmaDataBlockSize_== 0, HCCL_ERROR("[AlltoAllVSeq][Prepare]sdmaDataBlockSize_is zero."),
         HCCL_E_INTERNAL);
-    HCCL_DEBUG("[AlltoAllVNew][Prepare] userRank [%u] total cclsize[%llu]," \\
+    HCCL_DEBUG("[AlltoAllVSeq][Prepare] userRank [%u] total cclsize[%llu]," \\
         "sdmaDataBlockSize_[%llu], BigCountFlag[%d], stepSize[%u]", userRank_, cclInMem_.size(), sdmaDataBlockSize_, isBigCount_,
         algOpContext_.mc2Handler.stepSize);
 
@@ -2905,7 +2905,7 @@ HcclResult AlltoAllVNew::Prepare(PrepareData &param)
 }}
 
 //构造一个字符串，表示 subStreamReadInfo_ 中每个目标 rank 所对应的 streamIndex（流索引）列表，用于调试或日志记录。
-std::string AlltoAllVNew::GetStreamIndexString()
+std::string AlltoAllVSeq::GetStreamIndexString()
 {{
     std::string res = "";
     for (auto& info : subStreamReadInfo_) {{
@@ -2917,7 +2917,7 @@ std::string AlltoAllVNew::GetStreamIndexString()
 }}
 
 //计算 AllToAllV 通信中当前 rank 向所有目标 rank 发送数据中，最大的一次发送数据长度（maxSendLen）
-u64 AlltoAllVNew::CalcMaxSendLen()
+u64 AlltoAllVSeq::CalcMaxSendLen()
 {{
     u64 maxSendLen = 0;
     const SendRecvInfo& localSendRecvInfo = *localSendRecvInfoPtr_;
@@ -2926,12 +2926,12 @@ u64 AlltoAllVNew::CalcMaxSendLen()
         maxSendLen = std::max(maxSendLen, localSendRecvInfo.sendLength[dstRank]);
     }}
 
-    HCCL_DEBUG("[AlltoAllVNew][CalcMaxSendLen] maxSendLen[%llu]", maxSendLen);
+    HCCL_DEBUG("[AlltoAllVSeq][CalcMaxSendLen] maxSendLen[%llu]", maxSendLen);
     return maxSendLen;
 }}
 
 //为当前用户 rank 从某个目标 rank（destRank）接收数据时，生成分段读数据的信息（ReadDataBlock）列表，**用于后续执行 SDMA 或内存 copy 操作。
-void AlltoAllVNew::UpdateCurrRankRecvInfo(u32 roundIdx, u32 side, u32 destRank,
+void AlltoAllVSeq::UpdateCurrRankRecvInfo(u32 roundIdx, u32 side, u32 destRank,
     std::vector<ReadDataBlock>& readInfo, u32 maxRecvStep)
 {{
     const SendRecvInfo& localSendRecvInfo = *localSendRecvInfoPtr_;
@@ -2967,7 +2967,7 @@ void AlltoAllVNew::UpdateCurrRankRecvInfo(u32 roundIdx, u32 side, u32 destRank,
         u64 currDataRemainLen = localSendRecvInfo.recvLength[destRank] - dataOffset;
         u64 recvLen = std::min(sdmaDataBlockSize_, currDataRemainLen);
         u64 userOutOffset = localSendRecvInfo.recvOffset[destRank] + dataOffset;
-        HCCL_DEBUG("[AlltoAllVNew][UpdateCurrRankRecvInfo] usrRank[%u] recv from destRank [%u]"
+        HCCL_DEBUG("[AlltoAllVSeq][UpdateCurrRankRecvInfo] usrRank[%u] recv from destRank [%u]"
             "sendStepIdx[%u] recvLen[%lu] userOutOffset[%llu] scratchOffset[%llu]",
             userRank_, destRank, recvStepIdx, recvLen, userOutOffset, scratchOffset);
         readInfo.push_back({{recvLen, scratchOffset, userOutOffset}});
@@ -2978,7 +2978,7 @@ void AlltoAllVNew::UpdateCurrRankRecvInfo(u32 roundIdx, u32 side, u32 destRank,
 }}
 
 //为当前用户 rank 向某个目标 rank（destRank）发送数据时，生成分段读数据的信息（ReadDataBlock）列表，**用于后续执行 SDMA 或内存 copy 操作。
-void AlltoAllVNew::UpdateCurrRankSendInfo(u32 roundIdx, u32 side, u32 destRank,
+void AlltoAllVSeq::UpdateCurrRankSendInfo(u32 roundIdx, u32 side, u32 destRank,
     std::vector<SendDataBlock>& sendInfo, u32 maxSendStep)
 {{
     const SendRecvInfo& localSendRecvInfo = *localSendRecvInfoPtr_;
@@ -3014,7 +3014,7 @@ void AlltoAllVNew::UpdateCurrRankSendInfo(u32 roundIdx, u32 side, u32 destRank,
         u64 currDataRemainLen = localSendRecvInfo.sendLength[destRank] - dataOffset;
         u64 sendLen = std::min(sdmaDataBlockSize_, currDataRemainLen);
         u64 userInOffset = localSendRecvInfo.sendOffset[destRank] + dataOffset;
-        HCCL_DEBUG("[AlltoAllVNew][UpdateCurrRankSendInfo] usrRank[%u] send to destRank [%u]"
+        HCCL_DEBUG("[AlltoAllVSeq][UpdateCurrRankSendInfo] usrRank[%u] send to destRank [%u]"
             " sendStepIdx[%u] sendLen[%lu] userInOffset[%llu] scratchOffset[%llu]",
             userRank_, destRank, sendStepIdx, sendLen, userInOffset, scratchOffset);
         sendInfo.push_back({{sendLen, userInOffset, scratchOffset}});
@@ -3028,7 +3028,7 @@ void AlltoAllVNew::UpdateCurrRankSendInfo(u32 roundIdx, u32 side, u32 destRank,
 //subStreamReadInfo ：记录从哪些远程 rank 读取数据（ReadDataBlock）
 //subStreamSendInfo ：记录向哪些远程 rank 发送数据（SendDataBlock）
 //这两个结构将被用于后续调度阶段，驱动每个 subStream 执行真正的拷贝通信。
-void AlltoAllVNew::UpdateSendRecvInfo(u32 roundIdx,
+void AlltoAllVSeq::UpdateSendRecvInfo(u32 roundIdx,
     std::unordered_map<u32, std::vector<ReadDataBlock>> &subStreamReadInfo,
     std::unordered_map<u32, std::vector<SendDataBlock>> &subStreamSendInfo,
     const std::vector<std::vector<std::pair<u32,u32>>> &partialCommRankSet)
@@ -3063,7 +3063,7 @@ void AlltoAllVNew::UpdateSendRecvInfo(u32 roundIdx,
 }}
 
 //AlltoAll 算法的 OP_BASE 模式下，为当前轮次（以及下一个轮次）准备好用于调度的数据传输信息
-void AlltoAllVNew::UpdateOpBaseSubStreamInfo(u32 roundIdx)
+void AlltoAllVSeq::UpdateOpBaseSubStreamInfo(u32 roundIdx)
 {{
     if (roundIdx == 0 || !isBigCount_) {{
         subStreamReadInfo_.clear();
@@ -3078,7 +3078,7 @@ void AlltoAllVNew::UpdateOpBaseSubStreamInfo(u32 roundIdx)
 }}
 
 //在 AllToAllV 算法中，将用户输入数据从 userInput_ 拷贝到中间缓存 cclInMem_，用于同一个超节点（intra-node）内的通信。
-HcclResult AlltoAllVNew::PrepareIntraData(u32 step,
+HcclResult AlltoAllVSeq::PrepareIntraData(u32 step,
     std::unordered_map<u32,std::vector<SendDataBlock>> &subStreamSendInfo)
 {{
     u32 sendDataIndex = 0;
@@ -3087,7 +3087,7 @@ HcclResult AlltoAllVNew::PrepareIntraData(u32 step,
         if (step < sendNumSubStep_[sdmaInfo.first]) {{
             DeviceMem src = userInput_.range(sendInfo[step].userInOffset, sendInfo[step].sendLen);
             DeviceMem dst = cclInMem_.range(sendInfo[step].scratchOffset, sendInfo[step].sendLen);
-            HCCL_DEBUG("[AlltoAllVNew][PrepareIntraData]userRank [%u] copy from userInOffset[%llu]"
+            HCCL_DEBUG("[AlltoAllVSeq][PrepareIntraData]userRank [%u] copy from userInOffset[%llu]"
                 "len[%u] to scratchOffset [%llu]", userRank_, sendInfo[step].userInOffset, sendInfo[step].sendLen,
                 sendInfo[step].scratchOffset);
             if (isBigCount_) {{
@@ -3102,7 +3102,7 @@ HcclResult AlltoAllVNew::PrepareIntraData(u32 step,
 }}
 
 //更新每一轮中需要通信的远程rank集合
-void AlltoAllVNew::UpdateRemoteRankSet(u32 roundIdx, u32 groupRankSize)
+void AlltoAllVSeq::UpdateRemoteRankSet(u32 roundIdx, u32 groupRankSize)
 {{
     if (sdmaConcurrentNum_ == 1) {{ 
         //串行通信时，所有数据都在一个流上处理
@@ -3115,7 +3115,7 @@ void AlltoAllVNew::UpdateRemoteRankSet(u32 roundIdx, u32 groupRankSize)
 
 // 单 SDMA 通道下每轮通信对端 rank 生成
 //在当前轮 roundIdx 中，为当前 rank 生成一对要通信的 rank（接收和发送对象），并填入 partialCommRankSet_
-void AlltoAllVNew::UpdatePartialCommunicationRankSetPairWise(u32 roundIdx, u32 groupRankSize)
+void AlltoAllVSeq::UpdatePartialCommunicationRankSetPairWise(u32 roundIdx, u32 groupRankSize)
 {{
     partialCommRankSet_.clear();
     partialCommRankSet_.resize(1);
@@ -3123,16 +3123,16 @@ void AlltoAllVNew::UpdatePartialCommunicationRankSetPairWise(u32 roundIdx, u32 g
         u32 readRemoteRank = podStartRank_ + (rankIdxInPod_ + devNumInlocalPod_ - i) % devNumInlocalPod_;
         u32 sendRemoteRank = podStartRank_ + (rankIdxInPod_ + i) % devNumInlocalPod_;
         partialCommRankSet_[0].push_back(std::make_pair(readRemoteRank, sendRemoteRank));
-        HCCL_DEBUG("[AlltoAllVNew][UpdatePartialCommunicationRankSetPairWise] userRank [%u] i[%u]" \\
+        HCCL_DEBUG("[AlltoAllVSeq][UpdatePartialCommunicationRankSetPairWise] userRank [%u] i[%u]" \\
             "readRemoteRank[%u] writeRemoteRank[%u]", userRank_, i, readRemoteRank, sendRemoteRank);
     }}
-    HCCL_DEBUG("[AlltoAllVNew][UpdatePartialCommunicationRankSetPairWise] partialCommRankSet_ size[%zu]",
+    HCCL_DEBUG("[AlltoAllVSeq][UpdatePartialCommunicationRankSetPairWise] partialCommRankSet_ size[%zu]",
         partialCommRankSet_[0].size());
 }}
 
 //多通道（并发）AllToAllV 通信调度中，每轮通信对端 rank 计算与分组的核心逻辑
 //根据当前通信轮次、设备数量、并发通道数，计算并划分了多个通信对集合（rank pair）(recvRank, sendRank)，并根据是否对称放入三类通信集合中（左、右、自发自收
-void AlltoAllVNew::UpdatePartialCommunicationRankSet(u32 roundIdx, u32 groupRankSize,
+void AlltoAllVSeq::UpdatePartialCommunicationRankSet(u32 roundIdx, u32 groupRankSize,
     std::vector<std::vector<std::pair<u32,u32>>> &partialCommRankSet)
 {{
     partialCommRankSet.clear();
@@ -3150,16 +3150,16 @@ void AlltoAllVNew::UpdatePartialCommunicationRankSet(u32 roundIdx, u32 groupRank
             partialCommRankSet[0].push_back(std::make_pair(leftRemoteRank, leftRemoteRank));
             partialCommRankSet[1].push_back(std::make_pair(rightRemoteRank, rightRemoteRank));
         }}
-        HCCL_DEBUG("[AlltoAllVNew][UpdatePartialCommunicationRankSet] round[%u] userRank [%u] i[%u]" \\
+        HCCL_DEBUG("[AlltoAllVSeq][UpdatePartialCommunicationRankSet] round[%u] userRank [%u] i[%u]" \\
             "read/write leftRemoteRank[%u] rightRemoteRank[%u]", roundIdx, userRank_, i, leftRemoteRank, rightRemoteRank);
     }}
-    HCCL_DEBUG("[AlltoAllVNew][UpdatePartialCommunicationRankSet] round[%u] partialCommRankSet_ total size[%zu]",
+    HCCL_DEBUG("[AlltoAllVSeq][UpdatePartialCommunicationRankSet] round[%u] partialCommRankSet_ total size[%zu]",
         roundIdx, partialCommRankSet[0].size() + partialCommRankSet[1].size() + partialCommRankSet[2].size());
 }}
 
 // 主流只需要通知当前子步骤需要收发数据的 SDMA 流，减少同步开销
 //主流向所有 SDMA 子流发出通知，告知它们可以启动对应子步骤的通信任务，并通过轻量级的同步机制确保调度有序，同时发起一个空任务以避免同步隐式等待。
-HcclResult AlltoAllVNew::NotifySubStreamStart()
+HcclResult AlltoAllVSeq::NotifySubStreamStart()
 {{
     for (u32 streamIndex = 0; streamIndex < subStreamReadInfo_.size(); streamIndex++) {{
         CHK_RET(LocalNotify::Post(mainStream_, dispatcher_, sdmaMeshSignalSubToMain_[streamIndex], INVALID_VALUE_STAGE));
@@ -3169,13 +3169,13 @@ HcclResult AlltoAllVNew::NotifySubStreamStart()
     for (u32 streamIndex = 0; streamIndex < subStreamReadInfo_.size(); streamIndex++) {{
         CHK_RET(ExecEmptyTask(userInput_, userOutput_, sdmaSubStream_[streamIndex], dispatcher_));
     }}
-    HCCL_DEBUG("[AlltoAllVNew][NotifySubStreamStart] userRank [%u] main stream notify sdma stream [%s]",
+    HCCL_DEBUG("[AlltoAllVSeq][NotifySubStreamStart] userRank [%u] main stream notify sdma stream [%s]",
         userRank_, GetStreamIndexString().c_str());
     return HCCL_SUCCESS;
 }}
 
 //通信完成后的主流等待子流结束，确保所有 SDMA 子流的收发任务都已经完成再继续往下调度。
-HcclResult AlltoAllVNew::WaitSubStreamFinish()
+HcclResult AlltoAllVSeq::WaitSubStreamFinish()
 {{
     for (u32 streamIndex = 0; streamIndex < subStreamReadInfo_.size(); streamIndex++) {{
         CHK_RET(LocalNotify::Post(sdmaSubStream_[streamIndex], dispatcher_, sdmaMeshSignalMainToSub_[streamIndex],
@@ -3183,13 +3183,13 @@ HcclResult AlltoAllVNew::WaitSubStreamFinish()
         CHK_RET(LocalNotify::Wait(mainStream_, dispatcher_, sdmaMeshSignalMainToSub_[streamIndex],
             INVALID_VALUE_STAGE));
     }}
-    HCCL_DEBUG("[AlltoAllVNew][WaitSubStreamFinish] userRank [%u] main stream wait sdma stream [%s]",
+    HCCL_DEBUG("[AlltoAllVSeq][WaitSubStreamFinish] userRank [%u] main stream wait sdma stream [%s]",
         userRank_, GetStreamIndexString().c_str());
     return HCCL_SUCCESS;
 }}
 
 //主流通过信号 localSignalSubToMain_ 通知每个 local 子流（如用于机内通信的 stream）可以启动执行通信任务，并确保顺序同步。
-HcclResult AlltoAllVNew::NotifyLocalSubStreamStart()
+HcclResult AlltoAllVSeq::NotifyLocalSubStreamStart()
 {{
     for (u32 streamIndex = 0; streamIndex < subStreamSendInfo_.size(); streamIndex++) {{
         CHK_RET(LocalNotify::Post(mainStream_, dispatcher_, localSignalSubToMain_[streamIndex], INVALID_VALUE_STAGE));
@@ -3200,7 +3200,7 @@ HcclResult AlltoAllVNew::NotifyLocalSubStreamStart()
 }}
 
 //主流等待所有本地通信子流（localSubStream_[]）完成各自的通信任务（如节点内 memcpy），确保 local AllToAllV 步骤已全部完成，才进入下一步调度
-HcclResult AlltoAllVNew::WaitLocalSubStreamFinish()
+HcclResult AlltoAllVSeq::WaitLocalSubStreamFinish()
 {{
     for (u32 streamIndex = 0; streamIndex < subStreamSendInfo_.size(); streamIndex++) {{
         CHK_RET(LocalNotify::Post(localSubStream_[streamIndex], dispatcher_, localSignalMainToSub_[streamIndex],
@@ -3212,7 +3212,7 @@ HcclResult AlltoAllVNew::WaitLocalSubStreamFinish()
 }}
 
 //根据每个目标 rank 的发送与接收数据长度，计算出本 rank 需要执行多少个最大发送/接收子步骤（sub-step），以便在后续调度阶段进行分段通信。
-u32 AlltoAllVNew::CalcNumSubStep()
+u32 AlltoAllVSeq::CalcNumSubStep()
 {{
     const SendRecvInfo& localSendRecvInfo = *localSendRecvInfoPtr_;
 
@@ -3230,17 +3230,17 @@ u32 AlltoAllVNew::CalcNumSubStep()
 
         u32 currRankRecvSubStep = ((localSendRecvInfo.recvLength[destRank] + sdmaDataBlockSize_- 1) / sdmaDataBlockSize_);
         recvNumSubStep_[destRank] = currRankRecvSubStep;
-        HCCL_DEBUG("[AlltoAllVNew][CalcNumSubStep] userRank [%u] currRankSendSubStep[%u]" \\
+        HCCL_DEBUG("[AlltoAllVSeq][CalcNumSubStep] userRank [%u] currRankSendSubStep[%u]" \\
         "currRankRecvSubStep[%u]", userRank_, currRankSendSubStep, currRankRecvSubStep);
         numSubStep = std::max(numSubStep, std::max(currRankSendSubStep, currRankRecvSubStep));
     }}
-    HCCL_DEBUG("[AlltoAllVNew][CalcNumSubStep] userRank [%u] max communication step[%u]",
+    HCCL_DEBUG("[AlltoAllVSeq][CalcNumSubStep] userRank [%u] max communication step[%u]",
         userRank_, numSubStep);
     return numSubStep;
 }}
 
 //对当前通信步骤 step，遍历所有涉及远程通信的 rank 对（recvRank ←→ sendRank），通过 TxAck 和 RxAck 在对应 stream 上向远程 rank 发出 "我要开始收/发数据" 的通知，完成远端通信前的 handshake。
-HcclResult AlltoAllVNew::NotifyRemoteRankStart(u32 step)
+HcclResult AlltoAllVSeq::NotifyRemoteRankStart(u32 step)
 {{
     u32 streamIndex = 0;
     for (auto& sendRecvSide : partialCommRankSet_) {{
@@ -3265,12 +3265,12 @@ HcclResult AlltoAllVNew::NotifyRemoteRankStart(u32 step)
             streamIndex ++;
         }}
     }}
-    HCCL_INFO("[AlltoAllVNew][NotifyRemoteRankStart] done");
+    HCCL_INFO("[AlltoAllVSeq][NotifyRemoteRankStart] done");
     return HCCL_SUCCESS;
 }}
 
 //在第 step 步，遍历所有远程通信对，执行远程内存数据异步拷贝到本地（跨节点 D2D memcpy），并发出数据传输完成的信号通知，完成单步远程通信。
-HcclResult AlltoAllVNew::SDMAwithRemoteRankAndNotifyEnd(u32 step)
+HcclResult AlltoAllVSeq::SDMAwithRemoteRankAndNotifyEnd(u32 step)
 {{
     u32 streamIndex = 0;
     for (auto& sendRecvSide : partialCommRankSet_) {{
@@ -3295,7 +3295,7 @@ HcclResult AlltoAllVNew::SDMAwithRemoteRankAndNotifyEnd(u32 step)
                 DeviceMem dstMem = userOutput_.range(readInfo[step].recvOffset, readInfo[step].recvLen);
                 CHK_RET(HcclD2DMemcpyAsync(dispatcher_, dstMem, srcMem, currStream,
                     readTransport->GetRemoteRank(), readTransport->GetLinkType()));
-                HCCL_DEBUG("[AlltoAllVNew][SendRecvData] userRank [%u], recvRank[%u], sendRank[%u]," \\
+                HCCL_DEBUG("[AlltoAllVSeq][SendRecvData] userRank [%u], recvRank[%u], sendRank[%u]," \\
                     "sdma stream [%llu] read data from remote offset [%llu] len [%llu] to local [%llu]",
                     userRank_,  recvRank, sendRank, streamIndex, readInfo[step].remoteOffset,
                     readInfo[step].recvLen, readInfo[step].recvOffset); 
@@ -3307,14 +3307,14 @@ HcclResult AlltoAllVNew::SDMAwithRemoteRankAndNotifyEnd(u32 step)
             streamIndex ++;
         }}
     }}
-    HCCL_INFO("[AlltoAllVNew][SDMAwithRemoteRankAndNotifyEnd] done");
+    HCCL_INFO("[AlltoAllVSeq][SDMAwithRemoteRankAndNotifyEnd] done");
     return HCCL_SUCCESS;
 }}
 
 //按照当前 step 和轮次 roundIdx，完成跨节点通信信号通知、子流同步、数据拷贝准备和远程 SDMA 异步数据传输，实现分步分轮次的 AllToAllV 通信。
-HcclResult AlltoAllVNew::SendRecvData(u32 step, u32 roundIdx)
+HcclResult AlltoAllVSeq::SendRecvData(u32 step, u32 roundIdx)
 {{
-    HCCL_DEBUG("[AlltoAllVNew][SendRecvData] userRank [%u] sdma stream [%s] wait main stream",
+    HCCL_DEBUG("[AlltoAllVSeq][SendRecvData] userRank [%u] sdma stream [%s] wait main stream",
         userRank_, GetStreamIndexString().c_str());
     CHK_RET(NotifyRemoteRankStart(step));
     CHK_RET(WaitSubStreamFinish());
@@ -3330,14 +3330,14 @@ HcclResult AlltoAllVNew::SendRecvData(u32 step, u32 roundIdx)
 }}
 
 //将当前 rank 在用户输入缓冲区中指定的"发给自己"的数据区域，异步复制到对应的输出缓冲区中。
-HcclResult AlltoAllVNew::LocalCopy()
+HcclResult AlltoAllVSeq::LocalCopy()
 {{
     const SendRecvInfo& localSendRecvInfo = *localSendRecvInfoPtr_;
     DeviceMem src = userInput_.range(localSendRecvInfo.sendOffset[userRank_],
         localSendRecvInfo.sendLength[userRank_]);
     DeviceMem dst = userOutput_.range(localSendRecvInfo.recvOffset[userRank_],
         localSendRecvInfo.recvLength[userRank_]);
-    HCCL_DEBUG("[AlltoAllVNew][LocalCopy]userRank [%u] copy from userInput [%llu] len [%llu]" \\
+    HCCL_DEBUG("[AlltoAllVSeq][LocalCopy]userRank [%u] copy from userInput [%llu] len [%llu]" \\
         "to userOutput [%llu] dstLen[%llu]", userRank_, localSendRecvInfo.sendOffset[userRank_],
         localSendRecvInfo.sendLength[userRank_],
         localSendRecvInfo.recvOffset[userRank_],
@@ -3348,7 +3348,7 @@ HcclResult AlltoAllVNew::LocalCopy()
 }}
 
 //该函数协调本地和远程通信的准备、同步、数据发送和本地拷贝，实现多轮次多步的 AlltoAllV 通信调度。
-HcclResult AlltoAllVNew::RunGroupFullMeshAlltoall(u32 roundIdx, u32 step)
+HcclResult AlltoAllVSeq::RunGroupFullMeshAlltoall(u32 roundIdx, u32 step)
 {{
     UpdateOpBaseSubStreamInfo(roundIdx);
     CHK_RET(ExecEmptyTask(userInput_, userOutput_, mainStream_, dispatcher_));
@@ -3380,7 +3380,7 @@ HcclResult AlltoAllVNew::RunGroupFullMeshAlltoall(u32 roundIdx, u32 step)
 //调用实际执行函数 RunGroupFullMeshAlltoall 完成该轮次该步骤的通信调度和执行；
 //在大数据分轮次模式下，准备和切换下一轮的通信信息和状态；
 //最后启动本地子流任务，完成本地异步通信调度。
-HcclResult AlltoAllVNew::RunSDMATasks(u32 roundIdx, u32 step, u32 groupRankSize, u32 leftRankSize)
+HcclResult AlltoAllVSeq::RunSDMATasks(u32 roundIdx, u32 step, u32 groupRankSize, u32 leftRankSize)
 {{
     if (isBigCount_) {{
         if (roundIdx == 0) {{
@@ -3410,13 +3410,13 @@ HcclResult AlltoAllVNew::RunSDMATasks(u32 roundIdx, u32 step, u32 groupRankSize,
 //如果是细粒度通信，调用 RunSDMAFineGrained；否则，按照总步骤和轮次进行分组通信，调用 RunSDMATasks 完成每个子步骤的通信任务调度。
 //在每个通信步骤中，执行通知、等待、数据准备和远程数据传输，确保所有通信任务按顺序完成。
 //最后，记录通信完成的状态，并返回成功结果。
-HcclResult AlltoAllVNew::RunSDMA(HcclOpMetaInfoDef &opMeta)
+HcclResult AlltoAllVSeq::RunSDMA(HcclOpMetaInfoDef &opMeta)
 {{
     u32 totalStep = CalcNumSubStep();
  
     // 计算每个rank分组fullmesh后需要通信的轮次，向上取整
     commRounds_ = (devNumInlocalPod_ + sdmaConcurrentNum_ - 1) / sdmaConcurrentNum_;
-    HCCL_ERROR("[AlltoAllVNew][RunSDMA] userRank [%u] communication rounds[%llu] totalStep %u stepSize %u",
+    HCCL_ERROR("[AlltoAllVSeq][RunSDMA] userRank [%u] communication rounds[%llu] totalStep %u stepSize %u",
         userRank_, commRounds_, totalStep, algOpContext_.mc2Handler.stepSize);
 
     if (totalStep == 0 && !islocalCpyDone_) {{
@@ -3438,17 +3438,17 @@ HcclResult AlltoAllVNew::RunSDMA(HcclOpMetaInfoDef &opMeta)
         }}
     }}
     
-    HCCL_INFO("[AlltoAllVNew][RunSDMA] finished.");
+    HCCL_INFO("[AlltoAllVSeq][RunSDMA] finished.");
     return HCCL_SUCCESS;
 }}
 
-HcclResult AlltoAllVNew::RunAsync()
+HcclResult AlltoAllVSeq::RunAsync()
 {{   
     HcclOpMetaInfoDef opMeta = HcclOpMetaInfo::GetOneForAllToAllV(CopyPattern::ZCOPY, cclInMem_.size(), true);
     CHK_RET(InitTask(dispatcher_, mainStream_, opMeta.isEnableCache, opMeta.GetCacheKey()));
 
     if (userRankSize_ == 1) {{
-        HCCL_INFO("[AlltoAllVNew][RunAsync] do localcopy with 1 rank");
+        HCCL_INFO("[AlltoAllVSeq][RunAsync] do localcopy with 1 rank");
         CHK_RET(LocalCopy());
         return HCCL_SUCCESS;
     }}
@@ -3458,11 +3458,11 @@ HcclResult AlltoAllVNew::RunAsync()
     if (devNumInlocalPod_ > 1) {{
         CHK_RET(RunSDMA(opMeta));
     }}
-    HCCL_INFO("[AlltoAllVNew][RunAsync] finished.");
+    HCCL_INFO("[AlltoAllVSeq][RunAsync] finished.");
     return HCCL_SUCCESS;
 }}
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_2_ALL_V_NEW, AlltoAllVNew);
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_2_ALL_V_NEW, AlltoAllVSeq);
 }} // namespace hccl
 '''
     
@@ -3565,7 +3565,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         elif pattern == 'ring':
             return 'TEMPLATE_ALL_GATHER_RING'
         elif pattern == 'mesh':
-            return 'TEMPLATE_ALL_GATHER_MESH'
+            return 'TEMPLATE_ALL_GATHER_SEQ'
         else:
             return 'TEMPLATE_ALLGATHER_CUSTOM'
 
@@ -3605,9 +3605,9 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
             algorithm_type_lower = 'ring'
             print(f"    - Selected: Ring algorithm")
         elif pattern == 'mesh' or communication_pattern == 'all_to_all':
-            algorithm_suffix = 'Mesh'
-            algorithm_type_lower = 'mesh'
-            print(f"    - Selected: Mesh algorithm")
+            algorithm_suffix = 'Seq'
+            algorithm_type_lower = 'seq'
+            print(f"    - Selected: Seq algorithm")
         else:
             algorithm_suffix = self.config.topo_name_camel_case
             algorithm_type_lower = self.config.topo_name
@@ -3697,7 +3697,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         elif pattern == 'neighbor':
             algorithm_suffix = 'ring'
         elif pattern == 'all_to_all':
-            algorithm_suffix = 'mesh'
+            algorithm_suffix = 'seq'
         else:
             algorithm_suffix = self.config.topo_name
         
@@ -3707,8 +3707,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate custom content for specific AllGather algorithms
-        if pattern == 'all_to_all' and algorithm_suffix == 'mesh' and self.config.collective == CollectiveType.ALLGATHER:
-            content = self._generate_mesh_allgather_header(template_vars)
+        if pattern == 'all_to_all' and algorithm_suffix == 'seq' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_seq_allgather_header(template_vars)
         elif pattern == 'neighbor' and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_header(template_vars)
         else:
@@ -3731,7 +3731,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         elif pattern == 'neighbor':
             algorithm_suffix = 'ring'
         elif pattern == 'all_to_all':
-            algorithm_suffix = 'mesh'
+            algorithm_suffix = 'seq'
         else:
             algorithm_suffix = self.config.topo_name
         
@@ -3741,8 +3741,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Generate custom content for specific AllGather algorithms
-        if pattern == 'all_to_all' and algorithm_suffix == 'mesh' and self.config.collective == CollectiveType.ALLGATHER:
-            content = self._generate_mesh_allgather_source(template_vars)
+        if pattern == 'all_to_all' and algorithm_suffix == 'seq' and self.config.collective == CollectiveType.ALLGATHER:
+            content = self._generate_seq_allgather_source(template_vars)
         elif (pattern == 'neighbor' or pattern == 'ring') and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_source(template_vars)
         else:
@@ -3755,8 +3755,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         
         return str(output_file)
     
-    def _generate_mesh_allgather_header(self, template_vars: Dict[str, Any]) -> str:
-        """Generate mesh AllGather header file matching target format"""
+    def _generate_seq_allgather_header(self, template_vars: Dict[str, Any]) -> str:
+        """Generate seq AllGather header file matching target format"""
         class_name = template_vars['class_name']
         guard_name = template_vars['guard_name']
         
@@ -3792,8 +3792,8 @@ private:
 #endif /* {guard_name} */'''
         return content
     
-    def _generate_mesh_allgather_source(self, template_vars: Dict[str, Any]) -> str:
-        """Generate mesh AllGather source file matching target format"""
+    def _generate_seq_allgather_source(self, template_vars: Dict[str, Any]) -> str:
+        """Generate seq AllGather source file matching target format"""
         class_name = template_vars['class_name']
         header_file_name = template_vars['header_file_name']
         
@@ -3879,7 +3879,7 @@ HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std:
     return HCCL_SUCCESS;
 }}
 
-// RunAllGather实现了Mesh AllGather算法的核心逻辑 由RunAsync调用
+// RunAllGather实现了Seq AllGather算法的核心逻辑 由RunAsync调用
 HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
 {{
     if (outputSlices.size() < rankSize) {{
@@ -3934,7 +3934,7 @@ HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<
     return HCCL_SUCCESS;
 }}
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_MESH, {class_name});
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_SEQ, {class_name});
 }}  // namespace hccl'''
         return content
     
