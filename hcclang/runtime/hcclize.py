@@ -3770,8 +3770,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#ifndef {guard_name}
-#define {guard_name}
+#ifndef ALL_GATHER_MESH_SEQ_H
+#define ALL_GATHER_MESH_SEQ_H
 
 #include "alg_template_base_pub.h"
 
