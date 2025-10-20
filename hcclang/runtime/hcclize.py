@@ -2661,9 +2661,9 @@ class DSLToHcclTranspiler:
         # Extract algorithm name for file naming
         algorithm_name_base = self.config.algorithm_name.replace('_4ranks', '').replace('_8ranks', '').replace('_16ranks', '')
         
-        # Generate file paths
-        header_filename = f"alltoallv_{algorithm_name_base}.h"
-        source_filename = f"alltoallv_{algorithm_name_base}.cc"
+        # Generate file paths with seq suffix
+        header_filename = f"alltoallv_seq.h"
+        source_filename = f"alltoallv_seq.cc"
         
         header_path = os.path.join(self.config.output_dir, header_filename)
         source_path = os.path.join(self.config.output_dir, source_filename)
@@ -2700,8 +2700,8 @@ class DSLToHcclTranspiler:
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#ifndef ALLTOALL_V_H
-#define ALLTOALL_V_H
+#ifndef ALLTOALL_V_SEQ_H
+#define ALLTOALL_V_SEQ_H
 
 //#include "mc2_handler_pub.h"
 #include "alg_template_register.h"
@@ -2805,7 +2805,7 @@ private:
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "{algorithm_name}.h"
+#include "alltoallv_seq.h"
 
 namespace hccl {{
 AlltoAllVSeq::AlltoAllVSeq(const HcclDispatcher dispatcher)
@@ -3462,7 +3462,7 @@ HcclResult AlltoAllVSeq::RunAsync()
     return HCCL_SUCCESS;
 }}
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_2_ALL_V_NEW, AlltoAllVSeq);
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_2_ALL_V_SEQ, AlltoAllVSeq);
 }} // namespace hccl
 '''
     
@@ -3694,8 +3694,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         pattern = template_vars.get('communication_pattern', self.config.topo_name)
         if pattern == 'all_to_all' and template_vars.get('peer_calculation') == 'xor_distance':
             algorithm_suffix = 'recursive_doubling'
-        elif pattern == 'neighbor':
-            algorithm_suffix = 'ring'
+        elif pattern == 'neighbor' or pattern == 'ring':
+            algorithm_suffix = 'ring_seq'
         elif pattern == 'all_to_all':
             algorithm_suffix = 'mesh_seq'
         else:
@@ -3709,7 +3709,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         # Generate custom content for specific AllGather algorithms
         if pattern == 'all_to_all' and algorithm_suffix == 'mesh_seq' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_mesh_seq_allgather_header(template_vars)
-        elif pattern == 'neighbor' and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
+        elif (pattern == 'neighbor' or pattern == 'ring') and algorithm_suffix == 'ring_seq' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_header(template_vars)
         else:
             # Use standard template for other algorithms
@@ -3728,8 +3728,8 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         pattern = template_vars.get('communication_pattern', self.config.topo_name)
         if pattern == 'all_to_all' and template_vars.get('peer_calculation') == 'xor_distance':
             algorithm_suffix = 'recursive_doubling'
-        elif pattern == 'neighbor':
-            algorithm_suffix = 'ring'
+        elif pattern == 'neighbor' or pattern == 'ring':
+            algorithm_suffix = 'ring_seq'
         elif pattern == 'all_to_all':
             algorithm_suffix = 'mesh_seq'
         else:
@@ -3743,7 +3743,7 @@ CHK_RET(linkLeft_->RxWithReduce(UserMemType::INPUT_MEM, offset, dstMem.ptr(), da
         # Generate custom content for specific AllGather algorithms
         if pattern == 'all_to_all' and algorithm_suffix == 'mesh_seq' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_mesh_seq_allgather_source(template_vars)
-        elif (pattern == 'neighbor' or pattern == 'ring') and algorithm_suffix == 'ring' and self.config.collective == CollectiveType.ALLGATHER:
+        elif (pattern == 'neighbor' or pattern == 'ring') and algorithm_suffix == 'ring_seq' and self.config.collective == CollectiveType.ALLGATHER:
             content = self._generate_ring_allgather_source(template_vars)
         else:
             # Use standard template for other algorithms
@@ -3952,8 +3952,8 @@ REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_MESH_SEQ, {class_name});
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#ifndef ALL_GATHER_RING_H
-#define ALL_GATHER_RING_H
+#ifndef ALL_GATHER_RING_SEQ_H
+#define ALL_GATHER_RING_SEQ_H
 
 #include "alg_template_base_pub.h"
 
@@ -3985,7 +3985,7 @@ private:
 }};
 }}  // namespace hccl
 
-#endif /* ALL_GATHER_RING_H */'''
+#endif /* ALL_GATHER_RING_SEQ_H */'''
         return content
     
     def _generate_ring_allgather_source(self, template_vars: Dict[str, Any]) -> str:
@@ -4002,7 +4002,7 @@ private:
  * See LICENSE in the root of the software repository for the full text of the License.
  */
 
-#include "all_gather_ring.h"
+#include "all_gather_ring_seq.h"
 #include "alg_template_register.h"
 
 namespace hccl {{
@@ -4177,7 +4177,7 @@ HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<
     return HCCL_SUCCESS;
 }}
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_RING, {class_name});
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_RING_SEQ, {class_name});
 }}  // namespace hccl'''
         return content
 
