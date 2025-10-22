@@ -2791,7 +2791,7 @@ private:
     std::vector<std::shared_ptr<LocalNotify>> sdmaMeshSignalSubToMain_;
 };
 } // namespace hccl
-#endif /* ALLTOALL_V_MESH_READ_ONLY_PUB_H */
+#endif /* ALLTOALL_V_SEQ_H */
 '''
     
     def _get_alltoallv_source_content(self, algorithm_name: str) -> str:
@@ -3789,7 +3789,7 @@ private:
 }};
 }}  // namespace hccl
 
-#endif /* {guard_name} */'''
+#endif /* ALL_GATHER_MESH_SEQ_H */'''
         return content
     
     def _generate_mesh_seq_allgather_source(self, template_vars: Dict[str, Any]) -> str:
@@ -3958,30 +3958,31 @@ REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_MESH_SEQ, {class_name});
 #include "alg_template_base_pub.h"
 
 namespace hccl {{
-class {class_name} : public AlgTemplateBase {{
+class AllGatherRingSeq : public AlgTemplateBase {{
 public:
-    explicit {class_name}(const HcclDispatcher dispatcher);
+    explicit AllGatherRingSeq(const HcclDispatcher dispatcher);
+    ~AllGatherRingSeq() override;
 
-    ~{class_name}() override;
-
-    HcclResult Prepare("参数列表") override;  //可复用基类方法，也可按需重写
-    //重写RunAsync方法实现算法的具体执行逻辑
     HcclResult RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links) override;
 
-protected:
 private:
+    // Core algorithm implementation
+    HcclResult RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links);
     
-    //可以按照自己需求构建方法和成员变量
-
-    //例：
-    //HcclResult RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices);
-    // HcclResult TxVector(const LINK &link, const std::vector<Slice> &txSlices);
-    // HcclResult RxVector(const LINK &link, const std::vector<Slice> &rxSlices);
-
+    // Communication primitives
+    HcclResult TxVector(const LINK &link, const std::vector<Slice> &txSlices);
+    HcclResult RxVector(const LINK &link, const std::vector<Slice> &rxSlices);
+    HcclResult Tx(const LINK &link, const Slice &txSlice);
+    HcclResult Rx(const LINK &link, const Slice &rxSlice);
     
-    // 迭代6新增加
-    // std::shared_ptr<Transport> linkLeft_;
-    // std::shared_ptr<Transport> linkRight_;
+    // Utility functions
+    inline u32 ForwordRank(u32 rank, u32 rankSize, u32 preNum) const {{
+        return (rank + rankSize - preNum) % rankSize;
+    }}
+    
+    // Communication links
+    std::shared_ptr<Transport> linkLeft_;
+    std::shared_ptr<Transport> linkRight_;
 }};
 }}  // namespace hccl
 
@@ -4006,16 +4007,16 @@ private:
 #include "alg_template_register.h"
 
 namespace hccl {{
-{class_name}::{class_name}(const HcclDispatcher dispatcher) : AlgTemplateBase(dispatcher)
+AllGatherRingSeq::AllGatherRingSeq(const HcclDispatcher dispatcher) : AlgTemplateBase(dispatcher)
 {{
 }}
 
-{class_name}::~{class_name}()
+AllGatherRingSeq::~AllGatherRingSeq()
 {{
 }}
 
 // Communication primitives
-HcclResult {class_name}::TxVector(const LINK &link, const std::vector<Slice> &txSlices)
+HcclResult AllGatherRingSeq::TxVector(const LINK &link, const std::vector<Slice> &txSlices)
 {{
     std::vector<TxMemoryInfo> txMems;
     for (const Slice &txSlice : txSlices) {{
@@ -4028,7 +4029,7 @@ HcclResult {class_name}::TxVector(const LINK &link, const std::vector<Slice> &tx
     return HCCL_SUCCESS;
 }}
 
-HcclResult {class_name}::RxVector(const LINK &link, const std::vector<Slice> &rxSlices)
+HcclResult AllGatherRingSeq::RxVector(const LINK &link, const std::vector<Slice> &rxSlices)
 {{
     std::vector<RxMemoryInfo> rxMems;
     for (const Slice &rxSlice : rxSlices) {{
@@ -4042,7 +4043,7 @@ HcclResult {class_name}::RxVector(const LINK &link, const std::vector<Slice> &rx
     return HCCL_SUCCESS;
 }}
 
-HcclResult {class_name}::Tx(const LINK &link, const Slice &txSlice)
+HcclResult AllGatherRingSeq::Tx(const LINK &link, const Slice &txSlice)
 {{
     DeviceMem srcMem = outputMem_.range(txSlice.offset, txSlice.size);
     HCCL_DEBUG("tx srcMem[%p] range[%llu] size[%llu] ", srcMem.ptr(), txSlice.offset, txSlice.size);
@@ -4050,7 +4051,7 @@ HcclResult {class_name}::Tx(const LINK &link, const Slice &txSlice)
     return HCCL_SUCCESS;
 }}
 
-HcclResult {class_name}::Rx(const LINK &link, const Slice &rxSlice)
+HcclResult AllGatherRingSeq::Rx(const LINK &link, const Slice &rxSlice)
 {{
     DeviceMem dstMem = outputMem_.range(rxSlice.offset, rxSlice.size);
     HCCL_DEBUG("rx dstMem[%p] range[%llu], size[%llu] ",  dstMem.ptr(),
@@ -4059,7 +4060,7 @@ HcclResult {class_name}::Rx(const LINK &link, const Slice &rxSlice)
     return HCCL_SUCCESS;
 }}
 
-HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links)
+HcclResult AllGatherRingSeq::RunAsync(const u32 rank, const u32 rankSize, const std::vector<LINK> &links)
 {{
     CHK_SMART_PTR_NULL(dispatcher_);
     CHK_PTR_NULL(stream_.ptr());
@@ -4120,7 +4121,7 @@ HcclResult {class_name}::RunAsync(const u32 rank, const u32 rankSize, const std:
 }}
 
 // Core algorithm implementation
-HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
+HcclResult AllGatherRingSeq::RunAllGather(u32 rank, u32 rankSize, const std::vector<Slice> &outputSlices, const std::vector<LINK> &links)
 {{
     if (outputSlices.size() < rankSize) {{
         HCCL_ERROR("[Run][AllGather]rank[%u] OutputSlice Size is less than rank size", rank);
@@ -4177,7 +4178,7 @@ HcclResult {class_name}::RunAllGather(u32 rank, u32 rankSize, const std::vector<
     return HCCL_SUCCESS;
 }}
 
-REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_RING_SEQ, {class_name});
+REGISTER_TEMPLATE(TemplateType::TEMPLATE_ALL_GATHER_RING_SEQ, AllGatherRingSeq);
 }}  // namespace hccl'''
         return content
 
